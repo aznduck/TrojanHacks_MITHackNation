@@ -3,32 +3,65 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { apiClient, processEventsToTimeline } from "@/lib/api";
-import { DeploymentInfo, TimelineItem } from "@/lib/types";
+import { apiClient } from "@/lib/api";
+import { DeploymentInfo, AgentEvent } from "@/lib/types";
+import ReactFlowTimeline from "@/components/ReactFlowTimeline";
+import {
+  mockTimelineEvents,
+  mockFailedTimelineEvents,
+} from "@/lib/mock-timeline-data";
 
 export default function ReplayViewer() {
   const params = useParams();
   const deploymentId = params.id as string;
 
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
-  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<TimelineItem | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<AgentEvent | null>(null);
 
   useEffect(() => {
     const fetchDeployment = async () => {
       try {
         setLoading(true);
-        const deploymentData = await apiClient.getDeploymentInfo(deploymentId);
+
+        let events: AgentEvent[];
+
+        // Use mock data for testing
+        if (
+          deploymentId === "mock-success" ||
+          deploymentId === "sample-deployment-123"
+        ) {
+          events = mockTimelineEvents;
+        } else if (deploymentId === "mock-failed") {
+          events = mockFailedTimelineEvents;
+        } else {
+          // Try to fetch real data, fallback to mock on error
+          try {
+            events = await apiClient.getReplayEvents(deploymentId);
+          } catch {
+            events = mockTimelineEvents; // Fallback to mock data
+          }
+        }
+
+        // Determine status from events
+        const finalEvent = events.find((e) => e.stage === "final");
+        const status =
+          finalEvent && "status" in finalEvent
+            ? (finalEvent as any).status || "succeeded"
+            : "succeeded";
+
+        const deploymentData: DeploymentInfo = {
+          deployment_id: deploymentId,
+          status: status as "running" | "succeeded" | "failed",
+          created_at: Date.now(),
+          events,
+        };
         setDeployment(deploymentData);
 
-        const timelineData = processEventsToTimeline(deploymentData.events);
-        setTimeline(timelineData);
-
         // Auto-select first event
-        if (timelineData.length > 0) {
-          setSelectedEvent(timelineData[0]);
+        if (events.length > 0) {
+          setSelectedEvent(events[0]);
         }
       } catch (err) {
         setError(
@@ -158,141 +191,123 @@ export default function ReplayViewer() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Timeline */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg text-gray-900 font-semibold mb-4">
-                Timeline
-              </h2>
-
-              {timeline.length === 0 ? (
-                <div className="text-gray-500 text-center py-8">
-                  <p>No events found for this deployment.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {timeline.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className={`cursor-pointer p-3 rounded-lg border transition-colors ${
-                        selectedEvent?.id === item.id
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                      }`}
-                      onClick={() => setSelectedEvent(item)}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${getStatusColor(
-                            item.status
-                          )}`}
-                        >
-                          {getStatusIcon(item.status)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {item.stage}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {item.message}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {new Date(
-                              item.timestamp * 1000
-                            ).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Event Details */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg text-gray-900 font-semibold mb-4">
-                Event Details
-              </h2>
-
-              {selectedEvent ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Stage
-                      </label>
-                      <p className="text-sm text-gray-900">
-                        {selectedEvent.stage}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Status
-                      </label>
-                      <span
-                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          selectedEvent.status === "completed"
-                            ? "bg-green-100 text-green-800"
-                            : selectedEvent.status === "running"
-                            ? "bg-blue-100 text-blue-800"
-                            : selectedEvent.status === "failed"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {selectedEvent.status}
-                      </span>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Timestamp
-                      </label>
-                      <p className="text-sm text-gray-900">
-                        {new Date(
-                          selectedEvent.timestamp * 1000
-                        ).toLocaleString()}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Type
-                      </label>
-                      <p className="text-sm text-gray-900">
-                        {selectedEvent.type}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Message
-                    </label>
-                    <p className="text-sm text-gray-900">
-                      {selectedEvent.message}
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Raw Event Data
-                    </label>
-                    <pre className="bg-gray-100 p-4 rounded-lg text-xs overflow-x-auto">
-                      {JSON.stringify(selectedEvent.event, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-gray-500 text-center py-8">
-                  <p>Select an event from the timeline to view details</p>
-                </div>
-              )}
-            </div>
+        {/* Full-width Timeline Section */}
+        <div className="mb-6">
+          <div className="bg-white rounded-lg shadow p-6">
+            <ReactFlowTimeline
+              events={deployment?.events || []}
+              onEventSelect={setSelectedEvent}
+              selectedEvent={selectedEvent}
+            />
           </div>
         </div>
+
+        {/* Event Details Section */}
+        {selectedEvent && (
+          <div className="mb-6">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl text-gray-900 font-semibold mb-6">
+                Event Details
+              </h2>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Stage
+                    </label>
+                    <p className="text-sm text-gray-900">
+                      {selectedEvent.stage}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Type
+                    </label>
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {selectedEvent.type}
+                      {selectedEvent.type === "trace" &&
+                        selectedEvent.subtype &&
+                        ` - ${selectedEvent.subtype}`}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Timestamp
+                    </label>
+                    <p className="text-sm text-gray-900">
+                      {new Date(selectedEvent.ts * 1000).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Deployment ID
+                    </label>
+                    <p className="text-sm text-gray-900">
+                      {selectedEvent.deployment_id || "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                {selectedEvent.type === "status" &&
+                  "message" in selectedEvent && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Message
+                      </label>
+                      <p className="text-sm text-gray-900">
+                        {selectedEvent.message}
+                      </p>
+                    </div>
+                  )}
+
+                {selectedEvent.type === "trace" && (
+                  <div className="space-y-2">
+                    {"model" in selectedEvent && selectedEvent.model && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Model
+                        </label>
+                        <p className="text-sm text-gray-900">
+                          {selectedEvent.model}
+                        </p>
+                      </div>
+                    )}
+                    {"tool" in selectedEvent && selectedEvent.tool && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Tool
+                        </label>
+                        <p className="text-sm text-gray-900">
+                          {selectedEvent.tool}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
+                    Raw Event Data
+                  </label>
+                  <pre className="text-xs text-gray-900 bg-gray-100 p-3 rounded overflow-auto max-h-40">
+                    {JSON.stringify(selectedEvent, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Show message when no event is selected */}
+        {!selectedEvent && (
+          <div className="mb-6">
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="text-center py-8 text-gray-500">
+                <p>Select an event from the timeline above to view details.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
