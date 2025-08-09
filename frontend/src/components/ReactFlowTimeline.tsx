@@ -18,7 +18,17 @@ import { AgentEvent, FlowNode, FlowEdge } from "@/lib/types";
 
 // Custom node types
 const AgentNode = ({ data }: { data: any }) => {
-  const { label, stage, status, event, isSelected, onClick } = data;
+  const {
+    label,
+    stage,
+    status,
+    event,
+    isSelected,
+    isCurrentEvent,
+    isReplayedEvent,
+    isPlaying,
+    onClick,
+  } = data;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -37,15 +47,28 @@ const AgentNode = ({ data }: { data: any }) => {
     return event.type === "status" ? "●" : "◆";
   };
 
+  // Determine node styling based on replay state
+  const getNodeStyling = () => {
+    if (isCurrentEvent && isPlaying) {
+      return "border-yellow-500 ring-2 ring-yellow-200 bg-yellow-50 animate-pulse";
+    }
+    if (isCurrentEvent) {
+      return "border-yellow-500 ring-2 ring-yellow-200 bg-yellow-50";
+    }
+    if (isSelected) {
+      return "border-blue-500 ring-2 ring-blue-200 bg-blue-50";
+    }
+    if (isReplayedEvent) {
+      return "border-green-300 bg-green-50";
+    }
+    return "border-gray-300 bg-white opacity-60";
+  };
+
   return (
     <>
       <Handle type="target" position={Position.Left} />
       <div
-        className={`px-3 py-2 shadow-md rounded-md border-2 cursor-pointer transition-all hover:shadow-lg ${
-          isSelected
-            ? "border-blue-500 ring-2 ring-blue-200"
-            : "border-gray-300"
-        } bg-white`}
+        className={`px-3 py-2 shadow-md rounded-md border-2 cursor-pointer transition-all hover:shadow-lg ${getNodeStyling()}`}
         onClick={() => onClick?.(event)}
       >
         <div className="flex items-center space-x-2">
@@ -104,12 +127,16 @@ interface ReactFlowTimelineProps {
   events: AgentEvent[];
   onEventSelect?: (event: AgentEvent) => void;
   selectedEvent?: AgentEvent | null;
+  currentEventIndex?: number;
+  isPlaying?: boolean;
 }
 
 export default function ReactFlowTimeline({
   events,
   onEventSelect,
   selectedEvent,
+  currentEventIndex = -1,
+  isPlaying = false,
 }: ReactFlowTimelineProps) {
   // Convert events to React Flow nodes and edges
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
@@ -188,6 +215,11 @@ export default function ReactFlowTimeline({
           label = event.type;
         }
 
+        // Determine if this event is current in replay
+        const eventGlobalIndex = events.indexOf(event);
+        const isCurrentEvent = currentEventIndex === eventGlobalIndex;
+        const isReplayedEvent = currentEventIndex >= eventGlobalIndex;
+
         nodes.push({
           id: eventId,
           type: "agent",
@@ -201,6 +233,9 @@ export default function ReactFlowTimeline({
             status: hasError ? "failed" : "completed",
             event,
             isSelected: selectedEvent === event,
+            isCurrentEvent,
+            isReplayedEvent,
+            isPlaying,
             onClick: onEventSelect,
           },
           draggable: false,
@@ -254,7 +289,7 @@ export default function ReactFlowTimeline({
     });
 
     return { nodes, edges };
-  }, [events, selectedEvent, onEventSelect]);
+  }, [events, selectedEvent, currentEventIndex, isPlaying, onEventSelect]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -290,7 +325,7 @@ export default function ReactFlowTimeline({
   }
 
   return (
-    <div className="h-[calc(100vh-500px)] w-full border border-gray-200 rounded-lg overflow-hidden">
+    <div className="h-[calc(100vh-700px)] w-full border border-gray-200 rounded-lg overflow-hidden">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -305,14 +340,6 @@ export default function ReactFlowTimeline({
       >
         <Background color="#f1f5f9" gap={20} />
         <Controls showInteractive={false} />
-        <MiniMap
-          nodeColor={(node) => {
-            if (node.type === "stage") return "#e2e8f0";
-            return node.data.status === "failed" ? "#ef4444" : "#10b981";
-          }}
-          maskColor="rgba(0, 0, 0, 0.1)"
-          position="bottom-right"
-        />
       </ReactFlow>
     </div>
   );

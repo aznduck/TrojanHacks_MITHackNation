@@ -6,6 +6,7 @@ import Link from "next/link";
 import { apiClient } from "@/lib/api";
 import { DeploymentInfo, AgentEvent } from "@/lib/types";
 import ReactFlowTimeline from "@/components/ReactFlowTimeline";
+import ReplayControls from "@/components/ReplayControls";
 import {
   mockTimelineEvents,
   mockFailedTimelineEvents,
@@ -19,6 +20,8 @@ export default function ReplayViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<AgentEvent | null>(null);
+  const [currentEventIndex, setCurrentEventIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     const fetchDeployment = async () => {
@@ -62,6 +65,7 @@ export default function ReplayViewer() {
         // Auto-select first event
         if (events.length > 0) {
           setSelectedEvent(events[0]);
+          setCurrentEventIndex(0);
         }
       } catch (err) {
         setError(
@@ -76,6 +80,23 @@ export default function ReplayViewer() {
       fetchDeployment();
     }
   }, [deploymentId]);
+
+  // Sync selected event with current replay index
+  useEffect(() => {
+    if (deployment?.events && currentEventIndex >= 0 && currentEventIndex < deployment.events.length) {
+      setSelectedEvent(deployment.events[currentEventIndex]);
+    }
+  }, [currentEventIndex, deployment?.events]);
+
+  // Handle event index changes from replay controls
+  const handleEventIndexChange = (index: number) => {
+    setCurrentEventIndex(index);
+  };
+
+  // Handle play state changes
+  const handlePlayStateChange = (playing: boolean) => {
+    setIsPlaying(playing);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -191,6 +212,15 @@ export default function ReplayViewer() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Replay Controls */}
+        <ReplayControls
+          events={deployment?.events || []}
+          currentEventIndex={currentEventIndex}
+          onEventIndexChange={handleEventIndexChange}
+          onPlayStateChange={handlePlayStateChange}
+          className="mb-6"
+        />
+
         {/* Full-width Timeline Section */}
         <div className="mb-6">
           <div className="bg-white rounded-lg shadow p-6">
@@ -198,6 +228,8 @@ export default function ReplayViewer() {
               events={deployment?.events || []}
               onEventSelect={setSelectedEvent}
               selectedEvent={selectedEvent}
+              currentEventIndex={currentEventIndex}
+              isPlaying={isPlaying}
             />
           </div>
         </div>
