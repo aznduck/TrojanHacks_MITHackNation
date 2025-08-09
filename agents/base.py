@@ -24,20 +24,31 @@ class BaseAgent(ABC):
         raise NotImplementedError
 
     def _build_prompt(self):
-        """Compact ReAct prompt."""
-
+        """ReAct prompt compatible with LangChain's create_react_agent."""
+        
         template = (
             "You are {agent_name}: {agent_description}.\n"
             "You are part of a multi-agent deployment pipeline.\n"
             "Current context (JSON):\n{context}\n\n"
-            "Follow ReAct:\n"
-            "- Think step-by-step about what to do next.\n"
-            "- Use tools when they help.\n"
-            "- When done, output ONLY a compact JSON object with fields to merge into the context.\n"
-            "Do not repeat unchanged fields.\n\n"
-            "User request: {input}"
+            "You have access to the following tools:\n\n"
+            "{tools}\n\n"
+            "Use the following format:\n\n"
+            "Question: the input question you must answer\n"
+            "Thought: you should always think about what to do\n"
+            "Action: the action to take, should be one of [{tool_names}]\n"
+            "Action Input: the input to the action\n"
+            "Observation: the result of the action\n"
+            "... (this Thought/Action/Action Input/Observation can repeat N times)\n"
+            "Thought: I now know the final answer\n"
+            "Final Answer: output ONLY a compact JSON object with fields to merge into the context\n\n"
+            "Begin!\n\n"
+            "Question: {input}\n"
+            "Thought: {agent_scratchpad}"
         )
-        return PromptTemplate(input_variables=["input", "context", "agent_name", "agent_description"], template=template)
+        return PromptTemplate(
+            input_variables=["input", "context", "agent_name", "agent_description", "tools", "tool_names", "agent_scratchpad"],
+            template=template
+        )
 
     def build_agent(self):
         """Build executor."""
