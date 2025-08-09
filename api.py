@@ -3,6 +3,7 @@ import hmac
 import json
 import hashlib
 import uuid
+import time
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
@@ -88,5 +89,37 @@ async def ws_status(websocket: WebSocket):
 @app.get("/replay/{deployment_id}")
 async def get_replay(deployment_id: str):
     return JSONResponse(manager.get_events(deployment_id))
+
+
+@app.post("/replay/{deployment_id}/broadcast")
+async def replay_broadcast(deployment_id: str, request: Request, background: BackgroundTasks):
+    try:
+        speed = float(request.query_params.get("speed", "1.0"))
+        if speed <= 0:
+            speed = 1.0
+    except Exception:
+        speed = 1.0
+
+    events = manager.get_events(deployment_id)
+    if not events:
+        raise HTTPException(status_code=404, detail="no events for deployment_id")
+
+    def _rebroadcast():
+        sorted_events = sorted(events, key=lambda e: e.get("ts", 0))
+        if not sorted_events:
+            return
+        prev_ts = sorted_events[0].get("ts", int(time.time()))
+        for idx, evt in enumerate(sorted_events):
+            if idx == 0:
+                ws_broadcast(deployment_id, evt)
+                continue
+            curr_ts = evt.get("ts", prev_ts)
+            delay = max(0.0, (curr_ts - prev_ts) / speed)
+            time.sleep(delay)
+            ws_broadcast(deployment_id, evt)
+            prev_ts = curr_ts
+
+    background.add_task(_rebroadcast)
+    return JSONResponse({"ok": True, "replayed": len(events), "speed": speed})
 
 

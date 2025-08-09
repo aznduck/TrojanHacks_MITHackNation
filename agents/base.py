@@ -1,8 +1,11 @@
 import json
+import time
 from abc import ABC, abstractmethod
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_anthropic import ChatAnthropic
+from realtime.ws import broadcast as ws_broadcast
 
 
 class BaseAgent(ABC):
@@ -52,13 +55,23 @@ class BaseAgent(ABC):
     def _invoke(self, executor, *, instruction, context):
         """Invoke and return raw text output."""
         context_json = json.dumps(context, ensure_ascii=False)
+        deployment_id = context.get("deployment_id")
+        callbacks = None
+        if deployment_id:
+            callbacks = [
+                _WSCallbackHandler(
+                    deployment_id=deployment_id,
+                    agent_name=self.name,
+                )
+            ]
         result = executor.invoke(
             {
                 "input": instruction,
                 "context": context_json,
                 "agent_name": self.name,
                 "agent_description": self.description,
-            }
+            },
+            config={"callbacks": callbacks} if callbacks else None,
         )
         return str(result.get("output", ""))
 
@@ -69,6 +82,21 @@ class BaseAgent(ABC):
             if not isinstance(delta, dict):
                 raise ValueError("Agent output JSON must be an object")
             new_context = {**context, **delta}
+            deployment_id = context.get("deployment_id")
+            if deployment_id:
+                try:
+                    ws_broadcast(
+                        deployment_id,
+                        {
+                            "type": "trace",
+                            "stage": self.name.lower(),
+                            "subtype": "agent_delta",
+                            "delta": delta,
+                            "ts": int(time.time()),
+                        },
+                    )
+                except Exception:
+                    pass
             return new_context
         except Exception:
             new_context = dict(context)
@@ -85,4 +113,86 @@ class BaseAgent(ABC):
         raw = self._invoke(executor, instruction=instruction, context=context)
         return self._merge_delta_into_context(delta_json=raw, context=context)
 
+
+
+def _redact(value: str) -> str:
+    if not isinstance(value, str):
+        return value
+    to_mask = [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "VERCEL_TOKEN",
+        "GITHUB_TOKEN",
+    ]
+    for key in to_mask:
+        secret = None
+        try:
+            import os
+
+            secret = os.getenv(key)
+        except Exception:
+            secret = None
+        if secret and secret in value:
+            value = value.replace(secret, f"***{key}***")
+    return value
+
+
+class _WSCallbackHandler(BaseCallbackHandler):
+    def __init__(self, deployment_id: str, agent_name: str):
+        self.deployment_id = deployment_id
+        self.agent_name = agent_name
+
+    def _emit(self, payload: dict):
+        try:
+            payload.setdefault("type", "trace")
+            payload.setdefault("stage", self.agent_name.lower())
+            payload.setdefault("ts", int(time.time()))
+            ws_broadcast(self.deployment_id, payload)
+        except Exception:
+            pass
+
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        safe_prompts = [_redact(p) for p in (prompts or [])]
+        model = None
+        try:
+            model = serialized.get("kwargs", {}).get("model")
+        except Exception:
+            model = None
+        self._emit({
+            "subtype": "llm_start",
+            "model": model,
+            "input": safe_prompts,
+        })
+
+    def on_llm_end(self, response, **kwargs):
+        try:
+            texts = []
+            for gen in response.generations:
+                for g in gen:
+                    if hasattr(g, "text"):
+                        texts.append(_redact(g.text))
+            self._emit({
+                "subtype": "llm_end",
+                "output": texts,
+            })
+        except Exception:
+            self._emit({"subtype": "llm_end"})
+
+    def on_tool_start(self, serialized, input_str, **kwargs):
+        name = None
+        try:
+            name = serialized.get("name")
+        except Exception:
+            name = None
+        self._emit({
+            "subtype": "tool_start",
+            "tool": name,
+            "input": _redact(input_str) if isinstance(input_str, str) else input_str,
+        })
+
+    def on_tool_end(self, output, **kwargs):
+        self._emit({
+            "subtype": "tool_end",
+            "output": _redact(output) if isinstance(output, str) else output,
+        })
 
