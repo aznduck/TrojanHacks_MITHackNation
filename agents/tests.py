@@ -3,7 +3,7 @@ import json
 import shlex
 import subprocess
 import time
-from typing import Tuple
+from typing import Tuple, List, Dict
 
 from .base import BaseAgent
 from realtime.ws import broadcast as ws_broadcast
@@ -27,7 +27,7 @@ class TestSuiteAgent(BaseAgent):
     def __init__(self, *, timeout_seconds: int = 300):
         super().__init__(
             name="TestSuite",
-            description="Runs project test suite (npm test or pytest)",
+            description="Runs project test suite (npm test or pytest); proposes AI-generated tests if missing",
             llm=None,
             temperature=0.0,
         )
@@ -35,6 +35,35 @@ class TestSuiteAgent(BaseAgent):
 
     def setup_tools(self):
         return []
+
+    def _summarize_repo(self, workdir: str) -> Dict[str, str]:
+        summary: Dict[str, str] = {}
+        # Tree (depth 2)
+        tree_lines: List[str] = []
+        for root, dirs, files in os.walk(workdir):
+            rel = os.path.relpath(root, workdir)
+            depth = 0 if rel == "." else rel.count(os.sep) + 1
+            if depth > 2:
+                continue
+            indent = "  " * depth
+            tree_lines.append(f"{indent}{'.' if rel == '.' else rel}")
+            for f in sorted(files)[:50]:
+                tree_lines.append(f"{indent}  {f}")
+        summary["tree"] = "\n".join(tree_lines[:400])
+
+        def _read_cap(path: str, cap: int = 4000) -> str:
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    return f.read(cap)
+            except Exception:
+                return ""
+
+        # Key files
+        for fname in ("package.json", "requirements.txt", "pyproject.toml", "app.py", "main.py", "index.js", "server.js"):
+            p = os.path.join(workdir, fname)
+            if os.path.isfile(p):
+                summary[fname] = _read_cap(p)
+        return summary
 
     def _detect_command(self, workdir: str) -> Tuple[str, str]:
         pkg_json = os.path.join(workdir, "package.json")
@@ -90,17 +119,31 @@ class TestSuiteAgent(BaseAgent):
                     {
                         "type": "status",
                         "stage": self.name.lower(),
-                        "message": f"Running tests ({kind})" if cmd else "No tests detected",
+                        "message": f"Running tests ({kind})" if cmd else "No tests detected — proposing tests",
                         "ts": int(time.time()),
                     },
                 )
             except Exception:
                 pass
 
+        if not cmd:
+            # Propose tests using LLM
+            repo_summary = self._summarize_repo(workdir)
+            executor = self.build_agent()
+            instruction = (
+                "No tests detected. Propose up to 2 minimal smoke tests for this repo. "
+                "Return JSON with a 'test_proposals' array of objects: { path, language, content }. "
+                "Pick idiomatic defaults (pytest for Python, jest for Node). "
+                "Do NOT add new dependencies beyond those implied (pytest/jest)."
+            )
+            raw = self._invoke(executor, instruction=instruction, context={**context, "repo_summary": repo_summary})
+            delta_ctx = self._merge_delta_into_context(delta_json=raw, context=context)
+            return delta_ctx
+
         passed, output = self._run_cmd(cmd, workdir)
         delta = {
             "tests_passed": bool(passed),
-            "test_output": output[-20000:],  # limit
+            "test_output": output[-20000:],
         }
 
         if deployment_id:

@@ -3,6 +3,8 @@ import json
 import re
 
 from .base import BaseAgent
+from realtime.ws import broadcast as ws_broadcast
+import time
 
 
 class DependencyAnalyzer(BaseAgent):
@@ -53,13 +55,34 @@ class DependencyAnalyzer(BaseAgent):
             text = self._read_text(pkg_json_path)
             deps = self._parse_package_json(text or "{}")
             delta = {"package_manager": "npm", "dependencies": deps}
-            return {**context, **delta}
+            # If we have deps, ask LLM to flag deprecations/outdated risks and security cues
+            try:
+                executor = self.build_agent()
+                instruction = (
+                    "Review the dependencies and flag potential issues: deprecated packages, major version mismatches, "
+                    "and common security advisories (high-level). Return JSON { 'dependency_notes': [ { name, issue, recommendation } ] }."
+                )
+                raw = self._invoke(executor, instruction=instruction, context={**context, **delta})
+                delta = self._merge_delta_into_context(delta_json=raw, context={**context, **delta})
+            except Exception:
+                pass
+            return delta
 
         if os.path.isfile(reqs_path):
             text = self._read_text(reqs_path)
             deps = self._parse_requirements(text or "")
             delta = {"package_manager": "pip", "dependencies": deps}
-            return {**context, **delta}
+            try:
+                executor = self.build_agent()
+                instruction = (
+                    "Review the dependencies and flag potential issues: deprecated packages, major version mismatches, "
+                    "and common security advisories (high-level). Return JSON { 'dependency_notes': [ { name, issue, recommendation } ] }."
+                )
+                raw = self._invoke(executor, instruction=instruction, context={**context, **delta})
+                delta = self._merge_delta_into_context(delta_json=raw, context={**context, **delta})
+            except Exception:
+                pass
+            return delta
 
         return {**context, "dependencies": {}, "package_manager": None}
 
