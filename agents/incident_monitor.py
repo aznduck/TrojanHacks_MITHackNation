@@ -4,6 +4,9 @@ import time
 import subprocess
 import urllib.request
 import urllib.error
+import re
+import smtplib
+from email.message import EmailMessage
 from typing import Optional, Tuple, Dict, Any
 
 from .base import BaseAgent
@@ -112,6 +115,41 @@ class IncidentMonitorAgent(BaseAgent):
             return None
         return None
 
+    def _parse_email(self, author_str: Optional[str]) -> Optional[str]:
+        if not author_str:
+            return None
+        m = re.search(r"<([^>]+)>", author_str)
+        if m:
+            return m.group(1).strip()
+        # if only an email is present
+        if "@" in author_str and " " not in author_str:
+            return author_str.strip()
+        return None
+
+    def _send_incident_email(self, to_email: str, subject: str, body: str) -> bool:
+        host = os.getenv("SMTP_HOST")
+        port = int(os.getenv("SMTP_PORT", "587"))
+        user = os.getenv("SMTP_USERNAME")
+        password = os.getenv("SMTP_PASSWORD")
+        from_addr = os.getenv("SMTP_FROM") or user
+        use_tls = os.getenv("SMTP_TLS", "true").lower() in ("1", "true", "yes")
+        if not (host and user and password and from_addr and to_email):
+            return False
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = to_email
+        msg.set_content(body)
+        try:
+            with smtplib.SMTP(host, port, timeout=10) as server:
+                if use_tls:
+                    server.starttls()
+                server.login(user, password)
+                server.send_message(msg)
+            return True
+        except Exception:
+            return False
+
     def run(self, context):
         deployment_id = context.get("deployment_id")
         repo_url = context.get("repo_url") or ""
@@ -216,6 +254,33 @@ class IncidentMonitorAgent(BaseAgent):
                         "ts": int(time.time()),
                     },
                 )
+
+        # Optional email to commit author
+        if incidents and commit_sha:
+            author_str = _git_show_author(workdir, commit_sha)
+            to_addr = self._parse_email(author_str)
+            if to_addr:
+                subject = f"Incident: {incidents[0]['message'][:60]}"
+                body = (
+                    f"Deployment ID: {deployment_id}\n"
+                    f"Repo: {repo_url}\nCommit: {commit_sha}\n"
+                    f"Deployment URL: {context.get('deployment_url')}\n\n"
+                    f"Incident: {incidents[0]['message']}\n\n"
+                    f"Proposal: {json.dumps((proposal or {}), ensure_ascii=False)}\n\n"
+                    f"Issue: {issue_url or 'n/a'}\n"
+                )
+                sent = self._send_incident_email(to_addr, subject, body)
+                if deployment_id and sent:
+                    self._broadcast(
+                        deployment_id,
+                        {
+                            "type": "incident",
+                            "stage": self.name.lower(),
+                            "severity": "info",
+                            "message": f"Email sent to {to_addr}",
+                            "ts": int(time.time()),
+                        },
+                    )
 
         new_ctx = {**context}
         if http_status is not None:
