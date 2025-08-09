@@ -13,6 +13,8 @@ from orchestrator import run_pipeline
 from agents.architect import ArchitectAgent
 from agents.deps import DependencyAnalyzer
 from agents.tests import TestSuiteAgent
+from agents.deployment import DeploymentAgent
+from agents.incident_monitor import IncidentMonitorAgent
 from realtime.ws import manager, broadcast as ws_broadcast
 
 
@@ -70,7 +72,13 @@ async def github_webhook(request: Request, background: BackgroundTasks):
     deployment_id = str(uuid.uuid4())
 
     def _run():
-        agents = [ArchitectAgent(), DependencyAnalyzer(), TestSuiteAgent()]
+        agents = [
+            ArchitectAgent(),
+            DependencyAnalyzer(),
+            TestSuiteAgent(),
+            DeploymentAgent(),
+            IncidentMonitorAgent(),
+        ]
         run_pipeline(repo_url, commit_sha, deployment_id, broadcast=ws_broadcast, agents=agents)
 
     background.add_task(_run)
