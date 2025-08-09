@@ -4,6 +4,7 @@ import json
 import hashlib
 import uuid
 import time
+import logging
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
@@ -15,6 +16,19 @@ from realtime.ws import manager, broadcast as ws_broadcast
 
 
 app = FastAPI()
+REQUIRED_ENVS = ["GITHUB_WEBHOOK_SECRET"]
+OPTIONAL_ENVS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "VERCEL_TOKEN", "GITHUB_TOKEN"]
+
+
+@app.on_event("startup")
+async def _startup_check():
+    missing = [k for k in REQUIRED_ENVS if not os.getenv(k)]
+    if missing:
+        logging.warning("Missing required envs: %s", ", ".join(missing))
+    # Prefer one of LLM keys
+    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
+        logging.warning("No LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY)")
+
 
 
 def verify_github_signature(secret, body, signature_header):
@@ -89,6 +103,17 @@ async def ws_status(websocket: WebSocket):
 @app.get("/replay/{deployment_id}")
 async def get_replay(deployment_id: str):
     return JSONResponse(manager.get_events(deployment_id))
+
+
+@app.get("/health")
+async def health():
+    present = {k: bool(os.getenv(k)) for k in REQUIRED_ENVS + OPTIONAL_ENVS}
+    ok = all(present[k] for k in REQUIRED_ENVS)
+    return JSONResponse({
+        "ok": ok,
+        "env": present,
+        "hint": "Set GITHUB_WEBHOOK_SECRET and one of OPENAI_API_KEY/ANTHROPIC_API_KEY; VERCEL_TOKEN for deploy, GITHUB_TOKEN for issues/PRs.",
+    })
 
 
 @app.post("/replay/{deployment_id}/broadcast")

@@ -186,10 +186,10 @@ Zero-touch deployments for small dev teams: push to GitHub → auto-analyze → 
 - Webhook duplicates → acceptable for MVP; consider simple dedupe (P1)
 
 ## Runbook (Dev)
-1) Set env vars: `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `VERCEL_TOKEN`, `OPENAI_API_KEY`
-2) Create conda env, install dependencies
-3) Run `uvicorn api:app --reload`
-4) Configure GitHub webhook → push → watch dashboard
+1) Set env vars: `GITHUB_WEBHOOK_SECRET` and one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Optional: `VERCEL_TOKEN`, `GITHUB_TOKEN`.
+2) Run `uvicorn api:app --reload`
+3) Check `GET /health` for env hints
+4) Configure GitHub webhook → push → connect WS `/ws/status?deployment_id=...`
 
 ## Acceptance Criteria (Demo)
 - Push to test repo triggers pipeline

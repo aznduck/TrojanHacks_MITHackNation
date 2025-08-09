@@ -89,7 +89,8 @@ P2 — Stretch
   - `POST /replay/{deployment_id}/broadcast?speed=1.0` replays the recorded timeline with timing
 
 10) Env validation
-   - On app startup, validate presence of `GITHUB_WEBHOOK_SECRET`, `VERCEL_TOKEN`, `OPENAI_API_KEY`.
+   - On app startup, validate presence of `GITHUB_WEBHOOK_SECRET` and one of `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`.
+   - Add `/health` endpoint exposing which envs are set (no values), with hints.
 
 11) E2E smoke
    - Use a small public Node repo to drive the flow locally; verify live status via WebSocket logs.
@@ -148,7 +149,8 @@ P2 — Stretch
 - Base step tracing: Implemented in `agents/base.py` via WebSocket callback; emits `trace` events for LLM and tool activity, and `agent_delta` on merge.
 - Replay fetch: Implemented (`GET /replay/{deployment_id}`).
 - Replay broadcast: Implemented (`POST /replay/{deployment_id}/broadcast?speed=`).
- - Remaining P0 items: TestSuiteAgent, DeploymentAgent, IncidentMonitorAgent, frontend dashboard, env validation, and wiring remaining agents.
+- Env validation + `/health`: Implemented.
+- Remaining P0 items: TestSuiteAgent, DeploymentAgent, IncidentMonitorAgent, frontend dashboard, and wiring remaining agents.
 
 ### Completion Tracking (live)
 - 1) Orchestrator skeleton: Done
