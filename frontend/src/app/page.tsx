@@ -1,0 +1,142 @@
+"use client";
+
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { apiClient } from "@/lib/api";
+import { HealthResponse } from "@/lib/types";
+
+export default function Dashboard() {
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        setLoading(true);
+        const healthData = await apiClient.getHealth();
+        setHealth(healthData);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch health status"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHealth();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">
+            AgentOps Replay Dashboard
+          </h1>
+        </div>
+
+        {/* System Status */}
+        <div className="bg-white rounded-lg shadow mb-8 p-6">
+          <h2 className="text-xl font-semibold mb-4">System Status</h2>
+
+          {loading && (
+            <div className="flex items-center text-gray-500">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+              Checking system health...
+            </div>
+          )}
+
+          {error && (
+            <div className="text-red-600 bg-red-50 p-3 rounded">
+              Error: {error}
+            </div>
+          )}
+
+          {health && (
+            <div className="space-y-3">
+              <div
+                className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                  health.ok
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}
+              >
+                <div
+                  className={`w-2 h-2 rounded-full mr-2 ${
+                    health.ok ? "bg-green-500" : "bg-red-500"
+                  }`}
+                ></div>
+                {health.ok ? "System Healthy" : "System Issues"}
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mt-4">
+                {Object.entries(health.env).map(([key, value]) => (
+                  <div key={key} className="flex items-center space-x-2">
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        value ? "bg-green-500" : "bg-gray-300"
+                      }`}
+                    ></div>
+                    <span className="text-sm text-gray-700">{key}</span>
+                  </div>
+                ))}
+              </div>
+
+              {health.hint && (
+                <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded mt-3">
+                  💡 {health.hint}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-2">Test Replay</h3>
+            <p className="text-gray-600 mb-4">
+              View a sample deployment replay
+            </p>
+            <Link
+              href="/replay/sample-deployment-123"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            >
+              View Sample Replay
+            </Link>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-2">Real-time Monitor</h3>
+            <p className="text-gray-600 mb-4">Monitor live deployments</p>
+            <button
+              className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+              onClick={() => alert("Real-time monitoring coming soon!")}
+            >
+              Start Monitoring
+            </button>
+          </div>
+        </div>
+
+        {/* Recent Deployments Placeholder */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">Recent Deployments</h2>
+          <div className="text-gray-500 text-center py-8">
+            <div className="text-4xl mb-2">📊</div>
+            <p>
+              No deployments yet. Trigger a GitHub webhook to see deployment
+              replays here.
+            </p>
+            <p className="text-sm mt-2">
+              Deployment data will appear automatically when you push to a
+              configured repository.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
