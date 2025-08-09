@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { apiClient } from "@/lib/api";
 import { HealthResponse } from "@/lib/types";
+import DeploymentMonitor from "@/components/DeploymentMonitor";
 
 export default function Dashboard() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -40,10 +41,12 @@ export default function Dashboard() {
 
         {/* System Status */}
         <div className="bg-white rounded-lg shadow mb-8 p-6">
-          <h2 className="text-xl font-semibold mb-4">System Status</h2>
+          <h2 className="text-xl text-gray-900 font-semibold mb-4">
+            System Status
+          </h2>
 
           {loading && (
-            <div className="flex items-center text-gray-500">
+            <div className="flex items-center text-gray-700">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
               Checking system health...
             </div>
@@ -80,7 +83,7 @@ export default function Dashboard() {
                         value ? "bg-green-500" : "bg-gray-300"
                       }`}
                     ></div>
-                    <span className="text-sm text-gray-700">{key}</span>
+                    <span className="text-sm text-gray-800">{key}</span>
                   </div>
                 ))}
               </div>
@@ -95,10 +98,12 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold mb-2">Test Replay</h3>
-            <p className="text-gray-600 mb-4">
+            <h3 className="text-lg text-gray-900 font-semibold mb-2">
+              Test Replay
+            </h3>
+            <p className="text-gray-700 mb-4">
               View a sample deployment replay
             </p>
             <Link
@@ -108,34 +113,10 @@ export default function Dashboard() {
               View Sample Replay
             </Link>
           </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold mb-2">Real-time Monitor</h3>
-            <p className="text-gray-600 mb-4">Monitor live deployments</p>
-            <button
-              className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-              onClick={() => alert("Real-time monitoring coming soon!")}
-            >
-              Start Monitoring
-            </button>
-          </div>
         </div>
 
-        {/* Recent Deployments Placeholder */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">Recent Deployments</h2>
-          <div className="text-gray-500 text-center py-8">
-            <div className="text-4xl mb-2">📊</div>
-            <p>
-              No deployments yet. Trigger a GitHub webhook to see deployment
-              replays here.
-            </p>
-            <p className="text-sm mt-2">
-              Deployment data will appear automatically when you push to a
-              configured repository.
-            </p>
-          </div>
-        </div>
+        {/* Real-time Deployment Monitor */}
+        <DeploymentMonitor />
       </div>
     </div>
   );

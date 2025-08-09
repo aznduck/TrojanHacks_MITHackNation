@@ -1,164 +1,101 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AgentEvent } from './types';
 
-export type WebSocketEventHandler = (event: AgentEvent) => void;
-export type WebSocketStatusHandler = (status: 'connecting' | 'connected' | 'disconnected' | 'error') => void;
+// Simple WebSocket hook for real-time deployment updates
+export function useDeploymentWebSocket(deploymentId: string | null) {
+  const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-export class WebSocketManager {
-  private ws: WebSocket | null = null;
-  private url: string;
-  private eventHandlers: Set<WebSocketEventHandler> = new Set();
-  private statusHandlers: Set<WebSocketStatusHandler> = new Set();
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000; // Start with 1 second
-  private isManualClose = false;
-
-  constructor(url: string) {
-    this.url = url;
-  }
-
-  connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      return; // Already connected
+  const connect = () => {
+    if (!deploymentId) return;
+    
+    // Clear any existing reconnect timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
 
-    this.isManualClose = false;
-    this.notifyStatus('connecting');
-
-    try {
-      this.ws = new WebSocket(this.url);
-      this.setupEventListeners();
-    } catch (error) {
-      console.error('WebSocket connection error:', error);
-      this.notifyStatus('error');
-      this.scheduleReconnect();
-    }
-  }
-
-  disconnect(): void {
-    this.isManualClose = true;
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.notifyStatus('disconnected');
-  }
-
-  onEvent(handler: WebSocketEventHandler): () => void {
-    this.eventHandlers.add(handler);
-    return () => this.eventHandlers.delete(handler);
-  }
-
-  onStatus(handler: WebSocketStatusHandler): () => void {
-    this.statusHandlers.add(handler);
-    return () => this.statusHandlers.delete(handler);
-  }
-
-  private setupEventListeners(): void {
-    if (!this.ws) return;
-
-    this.ws.onopen = () => {
-      console.log('WebSocket connected');
-      this.reconnectAttempts = 0;
-      this.reconnectDelay = 1000;
-      this.notifyStatus('connected');
-    };
-
-    this.ws.onmessage = (event) => {
-      try {
-        const data: AgentEvent = JSON.parse(event.data);
-        this.notifyEvent(data);
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-      }
-    };
-
-    this.ws.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
-      this.ws = null;
-      
-      if (!this.isManualClose) {
-        this.notifyStatus('disconnected');
-        this.scheduleReconnect();
-      }
-    };
-
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      this.notifyStatus('error');
-    };
-  }
-
-  private scheduleReconnect(): void {
-    if (this.isManualClose || this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Max reconnection attempts reached or manual close');
+    // Don't connect if already connected
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
 
-    this.reconnectAttempts++;
-    const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
+    const wsUrl = `ws://localhost:8000/ws/status?deployment_id=${deploymentId}`;
+    setConnectionStatus('connecting');
+
+    try {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket connected for deployment:', deploymentId);
+        setConnectionStatus('connected');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data: AgentEvent = JSON.parse(event.data);
+          setEvents(prev => [...prev, data]);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        setConnectionStatus('disconnected');
+        wsRef.current = null;
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('error');
+      };
+
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+      setConnectionStatus('error');
+    }
+  };
+
+  const disconnect = () => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
     
-    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
-    
-    setTimeout(() => {
-      if (!this.isManualClose) {
-        this.connect();
-      }
-    }, delay);
-  }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setConnectionStatus('disconnected');
+  };
 
-  private notifyEvent(event: AgentEvent): void {
-    this.eventHandlers.forEach(handler => {
-      try {
-        handler(event);
-      } catch (error) {
-        console.error('Error in event handler:', error);
-      }
-    });
-  }
+  const clearEvents = () => {
+    setEvents([]);
+  };
 
-  private notifyStatus(status: 'connecting' | 'connected' | 'disconnected' | 'error'): void {
-    this.statusHandlers.forEach(handler => {
-      try {
-        handler(status);
-      } catch (error) {
-        console.error('Error in status handler:', error);
-      }
-    });
-  }
-
-  get readyState(): number {
-    return this.ws?.readyState ?? WebSocket.CLOSED;
-  }
-
-  get isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
-  }
-}
-
-// Hook for using WebSocket in React components
-export function useWebSocket(url: string) {
-  const [manager] = useState(() => new WebSocketManager(url));
-  const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
-  const [events, setEvents] = useState<AgentEvent[]>([]);
-
+  // Auto-connect when deploymentId changes
   useEffect(() => {
-    const unsubscribeStatus = manager.onStatus(setStatus);
-    const unsubscribeEvent = manager.onEvent((event) => {
-      setEvents(prev => [...prev, event]);
-    });
-
-    manager.connect();
+    if (deploymentId) {
+      connect();
+    } else {
+      disconnect();
+    }
 
     return () => {
-      unsubscribeStatus();
-      unsubscribeEvent();
-      manager.disconnect();
+      disconnect();
     };
-  }, [manager]);
+  }, [deploymentId]);
 
-  return { status, events, manager };
+  return {
+    events,
+    connectionStatus,
+    connect,
+    disconnect,
+    clearEvents,
+    isConnected: connectionStatus === 'connected'
+  };
 }
-
-
