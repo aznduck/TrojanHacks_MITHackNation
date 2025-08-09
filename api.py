@@ -5,9 +5,11 @@ import hashlib
 import uuid
 import time
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from orchestrator import run_pipeline
 from agents.architect import ArchitectAgent
@@ -18,19 +20,32 @@ from agents.incident_monitor import IncidentMonitorAgent
 from realtime.ws import manager, broadcast as ws_broadcast
 
 
-app = FastAPI()
 REQUIRED_ENVS = ["GITHUB_WEBHOOK_SECRET"]
 OPTIONAL_ENVS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "VERCEL_TOKEN", "GITHUB_TOKEN"]
 
 
-@app.on_event("startup")
-async def _startup_check():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     missing = [k for k in REQUIRED_ENVS if not os.getenv(k)]
     if missing:
         logging.warning("Missing required envs: %s", ", ".join(missing))
-    # Prefer one of LLM keys
     if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
         logging.warning("No LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY)")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+# CORS for frontend convenience (set CORS_ORIGINS env as comma-separated list; default *)
+cors_origins = os.getenv("CORS_ORIGINS", "*")
+origins = [o.strip() for o in cors_origins.split(",") if o.strip()] or ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 
@@ -74,7 +89,7 @@ async def github_webhook(request: Request, background: BackgroundTasks):
     def _run():
         agents = [
             ArchitectAgent(),
-            DependencyAnalyzer(),
+            DependencyAnalyzer(name="Deps", description="Parse manifests and flag risks"),
             TestSuiteAgent(),
             DeploymentAgent(),
             IncidentMonitorAgent(),
@@ -152,5 +167,48 @@ async def replay_broadcast(deployment_id: str, request: Request, background: Bac
 
     background.add_task(_rebroadcast)
     return JSONResponse({"ok": True, "replayed": len(events), "speed": speed})
+
+
+@app.post("/replay/{deployment_id}/sandbox")
+async def replay_sandbox(deployment_id: str, request: Request, background: BackgroundTasks):
+    """Run a sandbox replay using recorded agent deltas instead of live LLM/tool calls.
+
+    Returns a new deployment_id for the replay run and re-broadcasts its events.
+    """
+    new_id = str(uuid.uuid4())
+
+    def _run():
+        agents = [
+            ArchitectAgent(),
+            DependencyAnalyzer(name="Deps", description="Parse manifests and flag risks"),
+            TestSuiteAgent(),
+            DeploymentAgent(),
+            IncidentMonitorAgent(),
+        ]
+        # Seed context with replay toggles
+        ctx = {
+            "repo_url": "replay://",
+            "commit_sha": "replay",
+            "deployment_id": new_id,
+            "replay_use_recordings": True,
+            "replay_source_deployment_id": deployment_id,
+        }
+        # Broadcast a start event
+        ws_broadcast(new_id, {"type": "status", "stage": "replay", "message": "Starting sandbox replay", "ts": int(time.time())})
+        # Execute the same pipeline but short-circuit agent runs to recorded deltas
+        try:
+            from orchestrator import _safe_broadcast
+
+            for agent in agents:
+                stage_name = getattr(agent, "name", agent.__class__.__name__.lower())
+                _safe_broadcast(ws_broadcast, new_id, stage_name, "Starting")
+                ctx = agent.run(ctx)
+                _safe_broadcast(ws_broadcast, new_id, stage_name, "Completed")
+            _safe_broadcast(ws_broadcast, new_id, "final", "Replay finished", {"status": ctx.get("status", "succeeded")})
+        except Exception as exc:
+            ws_broadcast(new_id, {"type": "final", "status": "failed", "error": str(exc), "ts": int(time.time())})
+
+    background.add_task(_run)
+    return JSONResponse({"ok": True, "deployment_id": new_id})
 
 

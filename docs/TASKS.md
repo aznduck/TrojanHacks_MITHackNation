@@ -81,8 +81,9 @@ P2 — Stretch
 
 9) Wire orchestrator to agents
    - Execute in order: architect → deps → test → deploy → monitor; broadcast after each.
-  - Also append each event to replay buffer (same payload as WS).
-  - Add step-level trace events from agents via callbacks.
+   - Also append each event to replay buffer (same payload as WS).
+   - Add step-level trace events from agents via callbacks.
+   - Status: Done (pipeline: Architect → Deps → Tests → Deploy → IncidentMonitor)
 
 11) Replay API
   - `GET /replay/{deployment_id}` returns recorded events (already in place)

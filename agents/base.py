@@ -5,7 +5,7 @@ from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_anthropic import ChatAnthropic
-from realtime.ws import broadcast as ws_broadcast
+from realtime.ws import broadcast as ws_broadcast, manager as ws_manager
 
 
 class BaseAgent(ABC):
@@ -85,12 +85,16 @@ class BaseAgent(ABC):
             deployment_id = context.get("deployment_id")
             if deployment_id:
                 try:
+                    # per-agent sequence counter
+                    self._trace_seq = getattr(self, "_trace_seq", 0) + 1
+                    setattr(self, "_trace_seq", self._trace_seq)
                     ws_broadcast(
                         deployment_id,
                         {
                             "type": "trace",
                             "stage": self.name.lower(),
                             "subtype": "agent_delta",
+                            "seq": self._trace_seq,
                             "delta": delta,
                             "ts": int(time.time()),
                         },
@@ -105,6 +109,32 @@ class BaseAgent(ABC):
 
     def run(self, context):
         """Run and return updated context."""
+        # Deterministic replay: if toggle is set, return recorded delta for this agent
+        if context.get("replay_use_recordings") and context.get("replay_source_deployment_id"):
+            source_id = context.get("replay_source_deployment_id")
+            recorded_delta = _get_recorded_agent_delta(
+                source_deployment_id=source_id, agent_stage=self.name.lower()
+            )
+            if recorded_delta is not None:
+                new_context = {**context, **recorded_delta}
+                deployment_id = context.get("deployment_id")
+                if deployment_id:
+                    try:
+                        self._trace_seq = getattr(self, "_trace_seq", 0) + 1
+                        setattr(self, "_trace_seq", self._trace_seq)
+                        ws_broadcast(
+                            deployment_id,
+                            {
+                                "type": "trace",
+                                "stage": self.name.lower(),
+                                "subtype": "agent_delta_replay",
+                                "seq": self._trace_seq,
+                                "ts": int(time.time()),
+                            },
+                        )
+                    except Exception:
+                        pass
+                return new_context
         instruction = (
             "Review the context and perform your role. Use tools if needed. "
             "Return only the minimal JSON fields to add or update."
@@ -141,12 +171,15 @@ class _WSCallbackHandler(BaseCallbackHandler):
     def __init__(self, deployment_id: str, agent_name: str):
         self.deployment_id = deployment_id
         self.agent_name = agent_name
+        self._seq = 0
 
     def _emit(self, payload: dict):
         try:
             payload.setdefault("type", "trace")
             payload.setdefault("stage", self.agent_name.lower())
             payload.setdefault("ts", int(time.time()))
+            self._seq += 1
+            payload.setdefault("seq", self._seq)
             ws_broadcast(self.deployment_id, payload)
         except Exception:
             pass
@@ -195,4 +228,22 @@ class _WSCallbackHandler(BaseCallbackHandler):
             "subtype": "tool_end",
             "output": _redact(output) if isinstance(output, str) else output,
         })
+
+
+def _get_recorded_agent_delta(*, source_deployment_id: str, agent_stage: str):
+    try:
+        events = ws_manager.get_events(source_deployment_id)
+        # Search from end for the last delta of this agent stage
+        for evt in reversed(events):
+            if (
+                isinstance(evt, dict)
+                and evt.get("type") == "trace"
+                and evt.get("stage") == agent_stage
+                and evt.get("subtype") == "agent_delta"
+                and isinstance(evt.get("delta"), dict)
+            ):
+                return evt.get("delta")
+    except Exception:
+        return None
+    return None
 
