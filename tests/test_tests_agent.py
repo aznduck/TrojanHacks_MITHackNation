@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from agents.tests import TestSuiteAgent
 
@@ -52,5 +52,23 @@ class TestTestSuiteAgent:
         ok, out = agent._run_cmd("echo test", str(tmp_path))
         assert ok is False
         assert "boom" in out
+
+    @patch("agents.tests.TestSuiteAgent.build_agent")
+    def test_ai_test_proposals_when_no_tests(self, mock_build_agent, tmp_path):
+        # No package.json or requirements.txt → triggers AI proposals
+        mock_executor = Mock()
+        mock_executor.invoke.return_value = {
+            "output": json.dumps({
+                "test_proposals": [
+                    {"path": "tests/test_smoke.py", "language": "python", "content": "def test_true(): assert True"}
+                ]
+            })
+        }
+        mock_build_agent.return_value = mock_executor
+        agent = TestSuiteAgent()
+        ctx = {"workdir": str(tmp_path)}
+        out = agent.run(ctx)
+        assert "test_proposals" in out
+        assert out["test_proposals"][0]["path"].endswith("test_smoke.py")
 
 

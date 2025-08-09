@@ -1,4 +1,5 @@
 import json
+from unittest.mock import Mock, patch
 
 from agents.deps import DependencyAnalyzer
 
@@ -77,5 +78,37 @@ class TestDependencyAnalyzer:
         out = analyzer.run(ctx)
         assert out["package_manager"] is None
         assert out["dependencies"] == {}
+
+    @patch("agents.deps.DependencyAnalyzer.build_agent")
+    def test_ai_dependency_notes_for_package_json(self, mock_build_agent, tmp_path):
+        analyzer = DependencyAnalyzer(name="deps", description="parse")
+        (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"leftpad": "^1.0.0"}}))
+        mock_executor = Mock()
+        mock_executor.invoke.return_value = {
+            "output": json.dumps({
+                "dependency_notes": [
+                    {"name": "leftpad", "issue": "deprecated", "recommendation": "replace with native string methods"}
+                ]
+            })
+        }
+        mock_build_agent.return_value = mock_executor
+        out = analyzer.run({"workdir": str(tmp_path)})
+        assert any(n.get("name") == "leftpad" for n in out.get("dependency_notes", []))
+
+    @patch("agents.deps.DependencyAnalyzer.build_agent")
+    def test_ai_dependency_notes_for_requirements(self, mock_build_agent, tmp_path):
+        analyzer = DependencyAnalyzer(name="deps", description="parse")
+        (tmp_path / "requirements.txt").write_text("django==3.2.0\n")
+        mock_executor = Mock()
+        mock_executor.invoke.return_value = {
+            "output": json.dumps({
+                "dependency_notes": [
+                    {"name": "django", "issue": "outdated", "recommendation": "upgrade to 4.x"}
+                ]
+            })
+        }
+        mock_build_agent.return_value = mock_executor
+        out = analyzer.run({"workdir": str(tmp_path)})
+        assert any(n.get("name") == "django" for n in out.get("dependency_notes", []))
 
 
