@@ -150,7 +150,8 @@ P2 — Stretch
 - Replay fetch: Implemented (`GET /replay/{deployment_id}`).
 - Replay broadcast: Implemented (`POST /replay/{deployment_id}/broadcast?speed=`).
 - Env validation + `/health`: Implemented.
-- Remaining P0 items: TestSuiteAgent, DeploymentAgent, IncidentMonitorAgent, frontend dashboard, and wiring remaining agents.
+ - TestSuiteAgent: Done.
+ - Remaining P0 items: DeploymentAgent, IncidentMonitorAgent, frontend dashboard, and wiring remaining agents.
 
 ### Completion Tracking (live)
 - 1) Orchestrator skeleton: Done

@@ -43,9 +43,9 @@ class TestSuiteAgent(BaseAgent):
                 return "", "npm not available"
             data = _read_json(pkg_json) or {}
             scripts = (data.get("scripts") or {})
-            if "test" in scripts:
+            if "test" in scripts and isinstance(scripts.get("test"), str) and scripts.get("test").strip():
                 return "npm test --silent", "node"
-            return "npm test --silent", "node"
+            return "", "none"
 
         # Python
         if os.path.isfile(os.path.join(workdir, "requirements.txt")) or os.path.isfile(
