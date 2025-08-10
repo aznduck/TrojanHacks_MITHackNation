@@ -356,7 +356,9 @@ async def get_agent_outputs(deployment_id: str):
 
 @app.get("/health")
 async def health():
-    present = {k: bool(os.getenv(k)) for k in REQUIRED_ENVS + OPTIONAL_ENVS}
+    # Filter out OPENAI_API_KEY from display but keep AGENTIC_API_KEY
+    display_envs = [k for k in REQUIRED_ENVS + OPTIONAL_ENVS if k != "OPENAI_API_KEY"]
+    present = {k: bool(os.getenv(k)) for k in display_envs}
     ok = all(present[k] for k in REQUIRED_ENVS)
     return JSONResponse({
         "ok": ok,
