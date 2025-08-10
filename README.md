@@ -11,3 +11,5 @@ Quickstart
 What it does
 - Clones repo at pushed commit → runs agents → deploys (Vercel when enabled) → monitors health.
 - Logs agent steps (prompts, tool calls, outputs) for replay and compliance.
+
+Setup docs: see `docs/SETUP.md` for environment variables (Gmail, MongoDB, GitHub, Vercel) and webhook configuration.
