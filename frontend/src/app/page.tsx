@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { apiClient } from "@/lib/api";
 import { HealthResponse } from "@/lib/types";
 import DeploymentMonitor from "@/components/DeploymentMonitor";
+import RecentDeployments from "@/components/RecentDeployments";
 
 export default function Dashboard() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -97,26 +98,8 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg text-gray-900 font-semibold mb-2">
-              Test Replay
-            </h3>
-            <p className="text-gray-700 mb-4">
-              View a sample deployment replay
-            </p>
-            <Link
-              href="/replay/sample-deployment-123"
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-            >
-              View Sample Replay
-            </Link>
-          </div>
-        </div>
-
-        {/* Real-time Deployment Monitor */}
-        <DeploymentMonitor />
+        {/* Recent Deployments */}
+        <RecentDeployments className="mb-8" />
       </div>
     </div>
   );

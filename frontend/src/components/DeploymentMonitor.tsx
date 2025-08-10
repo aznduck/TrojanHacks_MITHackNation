@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDeploymentWebSocket } from "../lib/websocket";
 
-export default function DeploymentMonitor() {
-  const [deploymentId, setDeploymentId] = useState<string>("");
+interface DeploymentMonitorProps {
+  initialDeploymentId?: string;
+  autoStart?: boolean;
+  showHeader?: boolean;
+  className?: string;
+}
+
+export default function DeploymentMonitor({
+  initialDeploymentId = "",
+  autoStart = false,
+  showHeader = true,
+  className = ""
+}: DeploymentMonitorProps) {
+  const [deploymentId, setDeploymentId] = useState<string>(initialDeploymentId);
   const [isMonitoring, setIsMonitoring] = useState(false);
 
   // Use the WebSocket hook for real-time updates
@@ -16,6 +28,14 @@ export default function DeploymentMonitor() {
     clearEvents,
     isConnected,
   } = useDeploymentWebSocket(isMonitoring ? deploymentId : null);
+
+  // Auto-start monitoring if requested
+  useEffect(() => {
+    if (autoStart && initialDeploymentId && !isMonitoring) {
+      setIsMonitoring(true);
+      clearEvents();
+    }
+  }, [autoStart, initialDeploymentId, isMonitoring, clearEvents]);
 
   const startMonitoring = () => {
     if (!deploymentId.trim()) return;
@@ -70,10 +90,12 @@ export default function DeploymentMonitor() {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-6">
-        🔴 Live Deployment Monitor
-      </h2>
+    <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
+      {showHeader && (
+        <h2 className="text-xl font-semibold text-gray-900 mb-6">
+          🔴 Live Deployment Monitor
+        </h2>
+      )}
 
       {/* Connection Controls */}
       <div className="bg-gray-50 rounded-lg p-4 mb-6">
