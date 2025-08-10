@@ -244,7 +244,7 @@ class _WSCallbackHandler(BaseCallbackHandler):
 def _get_recorded_agent_delta(*, source_deployment_id: str, agent_stage: str):
     try:
         # Prefer Mongo if available
-        if _mongo:
+        if _mongo is not None:
             doc = _mongo.events.find_one(
                 {
                     "deployment_id": source_deployment_id,

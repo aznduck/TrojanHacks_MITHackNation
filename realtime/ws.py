@@ -63,7 +63,7 @@ class ConnectionManager:
         if len(buf) > 500:
             self._events[deployment_id] = buf[-500:]
         # persist to Mongo if available
-        if _mongo:
+        if _mongo is not None:
             try:
                 doc = dict(message)
                 doc.setdefault("deployment_id", deployment_id)
@@ -97,7 +97,7 @@ class ConnectionManager:
         """Store agent outputs for a deployment"""
         self._agent_outputs[deployment_id] = agent_outputs
         # Also persist to MongoDB if available
-        if _mongo:
+        if _mongo is not None:
             try:
                 doc = {
                     "deployment_id": deployment_id,
@@ -115,7 +115,7 @@ class ConnectionManager:
     def get_agent_outputs(self, deployment_id):
         """Get agent outputs for a deployment"""
         # Try MongoDB first if available
-        if _mongo:
+        if _mongo is not None:
             try:
                 doc = _mongo.agent_outputs.find_one({"deployment_id": deployment_id})
                 if doc:

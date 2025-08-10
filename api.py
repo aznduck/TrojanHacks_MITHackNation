@@ -219,7 +219,7 @@ async def register_callback(request: Request):
 @app.get("/replay/{deployment_id}")
 async def get_replay(deployment_id: str):
     try:
-        if _mongo:
+        if _mongo is not None:
             events = list(_mongo.events.find({"deployment_id": deployment_id}).sort("ts", 1))
             for e in events:
                 e.pop("_id", None)
@@ -292,7 +292,7 @@ async def replay_broadcast(deployment_id: str, request: Request, background: Bac
 
     try:
         events = None
-        if _mongo:
+        if _mongo is not None:
             docs = list(_mongo.events.find({"deployment_id": deployment_id}).sort("ts", 1))
             for d in docs:
                 d.pop("_id", None)
