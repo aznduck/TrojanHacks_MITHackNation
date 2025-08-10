@@ -5,7 +5,7 @@ import subprocess
 import urllib.request
 import urllib.error
 import re
-import smtplib
+import base64
 from email.message import EmailMessage
 from typing import Optional, Tuple, Dict, Any
 
@@ -127,28 +127,147 @@ class IncidentMonitorAgent(BaseAgent):
         return None
 
     def _send_incident_email(self, to_email: str, subject: str, body: str) -> bool:
-        host = os.getenv("SMTP_HOST")
-        port = int(os.getenv("SMTP_PORT", "587"))
-        user = os.getenv("SMTP_USERNAME")
-        password = os.getenv("SMTP_PASSWORD")
-        from_addr = os.getenv("SMTP_FROM") or user
-        use_tls = os.getenv("SMTP_TLS", "true").lower() in ("1", "true", "yes")
-        if not (host and user and password and from_addr and to_email):
+        # Gmail API only
+        return self._send_incident_email_gmail(to_email, subject, body)
+
+    def _send_incident_email_gmail(self, to_email: str, subject: str, body: str) -> bool:
+        from_addr = os.getenv("GMAIL_FROM")
+        cid = os.getenv("GMAIL_CLIENT_ID")
+        csecret = os.getenv("GMAIL_CLIENT_SECRET")
+        rtoken = os.getenv("GMAIL_REFRESH_TOKEN")
+        if not (from_addr and cid and csecret and rtoken and to_email):
             return False
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = from_addr
-        msg["To"] = to_email
-        msg.set_content(body)
         try:
-            with smtplib.SMTP(host, port, timeout=10) as server:
-                if use_tls:
-                    server.starttls()
-                server.login(user, password)
-                server.send_message(msg)
-            return True
+            # Get access token
+            token_req = urllib.request.Request(
+                url="https://oauth2.googleapis.com/token",
+                method="POST",
+                data=urllib.parse.urlencode(
+                    {
+                        "client_id": cid,
+                        "client_secret": csecret,
+                        "refresh_token": rtoken,
+                        "grant_type": "refresh_token",
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            with urllib.request.urlopen(token_req, timeout=10) as resp:
+                token = json.loads(resp.read().decode("utf-8")).get("access_token")
+            if not token:
+                return False
+            # Build MIME and base64url encode
+            msg = EmailMessage()
+            msg["Subject"] = subject
+            msg["From"] = from_addr
+            msg["To"] = to_email
+            msg.set_content(body)
+            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+            send_req = urllib.request.Request(
+                url="https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                method="POST",
+                data=json.dumps({"raw": raw}).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(send_req, timeout=10):
+                return True
         except Exception:
             return False
+
+    def _create_github_pr(
+        self,
+        *,
+        repo_url: str,
+        base_sha: str,
+        title: str,
+        body: str,
+        files: list[dict],
+    ) -> Optional[str]:
+        token = os.getenv("GITHUB_TOKEN")
+        owner_repo = _parse_repo_owner_name(repo_url)
+        if not (token and owner_repo and base_sha and files):
+            return None
+        owner, name = owner_repo
+        try:
+            # Resolve default branch
+            req_repo = urllib.request.Request(
+                url=f"https://api.github.com/repos/{owner}/{name}",
+                method="GET",
+                headers={
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "agentops-replay",
+                },
+            )
+            with urllib.request.urlopen(req_repo, timeout=10) as resp:
+                repo_info = json.loads(resp.read().decode("utf-8"))
+            base_branch = repo_info.get("default_branch") or "main"
+            # Create branch from base_sha
+            branch = f"agentops/{int(time.time())}"
+            req_ref = urllib.request.Request(
+                url=f"https://api.github.com/repos/{owner}/{name}/git/refs",
+                method="POST",
+                data=json.dumps({"ref": f"refs/heads/{branch}", "sha": base_sha}).encode("utf-8"),
+                headers={
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "agentops-replay",
+                    "Content-Type": "application/json",
+                },
+            )
+            try:
+                urllib.request.urlopen(req_ref, timeout=10).read()
+            except Exception:
+                # Branch may exist; continue
+                pass
+            # Create/update files via Contents API
+            for f in files:
+                path = f.get("path")
+                content = f.get("content") or ""
+                if not path:
+                    continue
+                b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+                req_put = urllib.request.Request(
+                    url=f"https://api.github.com/repos/{owner}/{name}/contents/{path}",
+                    method="PUT",
+                    data=json.dumps(
+                        {
+                            "message": f"Add {path} (AgentOps)",
+                            "content": b64,
+                            "branch": branch,
+                        }
+                    ).encode("utf-8"),
+                    headers={
+                        "Authorization": f"token {token}",
+                        "Accept": "application/vnd.github+json",
+                        "User-Agent": "agentops-replay",
+                        "Content-Type": "application/json",
+                    },
+                )
+                urllib.request.urlopen(req_put, timeout=10).read()
+            # Create PR
+            req_pr = urllib.request.Request(
+                url=f"https://api.github.com/repos/{owner}/{name}/pulls",
+                method="POST",
+                data=json.dumps(
+                    {"title": title, "head": branch, "base": base_branch, "body": body}
+                ).encode("utf-8"),
+                headers={
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "agentops-replay",
+                    "Content-Type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req_pr, timeout=10) as resp:
+                pr = json.loads(resp.read().decode("utf-8"))
+                return pr.get("html_url")
+        except Exception:
+            return None
+        return None
 
     def run(self, context):
         deployment_id = context.get("deployment_id")
@@ -282,6 +401,28 @@ class IncidentMonitorAgent(BaseAgent):
                         },
                     )
 
+        # Optional PR with proposed tests
+        pr_url = None
+        test_files = []
+        if isinstance(context.get("test_proposals"), list):
+            for t in context.get("test_proposals"):
+                if isinstance(t, dict) and t.get("path") and t.get("content"):
+                    test_files.append({"path": t["path"], "content": t["content"]})
+        if incidents and repo_url and commit_sha and test_files and os.getenv("GITHUB_TOKEN"):
+            pr_title = f"Add smoke tests (AgentOps)"
+            pr_body = (
+                f"Automated test proposals generated due to incident.\n\n"
+                f"Proposal: {json.dumps((proposal or {}), ensure_ascii=False)}\n"
+            )
+            pr_url = self._create_github_pr(
+                repo_url=repo_url, base_sha=commit_sha, title=pr_title, body=pr_body, files=test_files
+            )
+            if deployment_id and pr_url:
+                self._broadcast(
+                    deployment_id,
+                    {"type": "github", "action": "pr_opened", "url": pr_url, "ts": int(time.time())},
+                )
+
         new_ctx = {**context}
         if http_status is not None:
             new_ctx["http_status"] = int(http_status)
@@ -290,6 +431,8 @@ class IncidentMonitorAgent(BaseAgent):
             new_ctx["incidents"] = incidents
         if issue_url:
             new_ctx["github_issue_url"] = issue_url
+        if pr_url:
+            new_ctx["github_pr_url"] = pr_url
         if proposal:
             new_ctx["incident_proposal"] = proposal
         return new_ctx
