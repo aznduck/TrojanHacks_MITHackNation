@@ -4,6 +4,7 @@ import json
 import hashlib
 import uuid
 import time
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -69,7 +70,7 @@ def verify_github_signature(secret, body, signature_header):
 
 
 @app.post("/webhook/github")
-async def github_webhook(request: Request, background: BackgroundTasks):
+async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
     signature = request.headers.get("X-Hub-Signature-256")
     body = await request.body()
@@ -100,55 +101,91 @@ async def github_webhook(request: Request, background: BackgroundTasks):
         IncidentMonitorAgent(),
     ]
     
-    # Execute pipeline and wait for results
-    result = run_pipeline(repo_url, commit_sha, deployment_id, broadcast=ws_broadcast, agents=agents)
+    # Start pipeline in a separate thread for real-time broadcasting
+    import threading
+    thread = threading.Thread(
+        target=run_pipeline_sync, 
+        args=(repo_url, commit_sha, deployment_id, agents)
+    )
+    thread.daemon = True
+    thread.start()
     
-    # Extract agent outputs from the context
-    agent_outputs = {
-        "architect": {
-            "infrastructure_files": result.get("infrastructure_files"),
-            "dockerfile": result.get("dockerfile"),
-            "ci_cd_config": result.get("ci_cd_config"),
-            "docker_compose": result.get("docker_compose"),
-            "stack": result.get("stack"),
-            "infrastructure_generated": result.get("infrastructure_generated")
-        },
-        "dependencies": {
-            "dependency_notes": result.get("dependency_notes"),
-            "dependencies": result.get("dependencies"),
-            "risks": result.get("risks")
-        },
-        "tests": {
-            "test_output": result.get("test_output"),
-            "test_passed": result.get("test_passed"),
-            "ai_tests": result.get("ai_tests")
-        },
-        "deployment": {
-            "deployment_url": result.get("deployment_url"),
-            "deployment_status": result.get("deployment_status")
-        },
-        "monitoring": {
-            "healthy": result.get("healthy"),
-            "monitoring_report": result.get("monitoring_report"),
-            "github_issue_created": result.get("github_issue_created"),
-            "alert_sent": result.get("alert_sent")
-        }
-    }
-    
-    # Store agent outputs for later retrieval by frontend
-    manager.store_agent_outputs(deployment_id, agent_outputs)
-    
-    # Return comprehensive response
+    # Return immediately with deployment info
     return JSONResponse({
         "ok": True,
         "deployment_id": deployment_id,
-        "status": result.get("status", "unknown"),
-        "error": result.get("error") if "error" in result else None,
-        "workdir": result.get("workdir"),
-        "agent_outputs": agent_outputs,
+        "status": "started",
         "websocket_url": f"/ws/status?deployment_id={deployment_id}",
-        "replay_url": f"/replay/{deployment_id}"
+        "replay_url": f"/replay/{deployment_id}",
+        "message": "Deployment started, connect to WebSocket for real-time updates"
     })
+
+
+def run_pipeline_sync(repo_url: str, commit_sha: str, deployment_id: str, agents: list):
+    """Run the orchestrator pipeline synchronously in a thread with real-time WebSocket broadcasting"""
+    try:
+        # Create a synchronous broadcast wrapper that uses the existing ws_broadcast
+        def thread_broadcast(deployment_id: str, message: dict):
+            # Use the existing synchronous broadcast function
+            ws_broadcast(deployment_id, message)
+        
+        # Run pipeline with real-time broadcasting
+        result = run_pipeline(repo_url, commit_sha, deployment_id, broadcast=thread_broadcast, agents=agents)
+        
+        # Extract agent outputs from the context
+        agent_outputs = {
+            "architect": {
+                "infrastructure_files": result.get("infrastructure_files"),
+                "dockerfile": result.get("dockerfile"),
+                "ci_cd_config": result.get("ci_cd_config"),
+                "docker_compose": result.get("docker_compose"),
+                "stack": result.get("stack"),
+                "infrastructure_generated": result.get("infrastructure_generated")
+            },
+            "dependencies": {
+                "dependency_notes": result.get("dependency_notes"),
+                "dependencies": result.get("dependencies"),
+                "risks": result.get("risks")
+            },
+            "tests": {
+                "test_output": result.get("test_output"),
+                "test_passed": result.get("test_passed"),
+                "ai_tests": result.get("ai_tests")
+            },
+            "deployment": {
+                "deployment_url": result.get("deployment_url"),
+                "deployment_status": result.get("deployment_status")
+            },
+            "monitoring": {
+                "healthy": result.get("healthy"),
+                "monitoring_report": result.get("monitoring_report"),
+                "github_issue_created": result.get("github_issue_created"),
+                "alert_sent": result.get("alert_sent")
+            }
+        }
+        
+        # Store agent outputs
+        manager.store_agent_outputs(deployment_id, agent_outputs)
+        
+        # Send final completion event
+        ws_broadcast(deployment_id, {
+            "type": "status",
+            "stage": "completed",
+            "message": "Deployment pipeline completed",
+            "status": result.get("status", "success"),
+            "timestamp": int(time.time())
+        })
+        
+    except Exception as e:
+        # Send error event
+        ws_broadcast(deployment_id, {
+            "type": "status",
+            "stage": "error",
+            "message": f"Pipeline failed: {str(e)}",
+            "status": "error",
+            "timestamp": int(time.time())
+        })
+        print(f"Pipeline error for {deployment_id}: {e}")
 
 
 @app.websocket("/ws/status")

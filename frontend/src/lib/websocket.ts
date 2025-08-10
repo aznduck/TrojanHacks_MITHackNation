@@ -4,6 +4,7 @@ import { AgentEvent } from './types';
 // Simple WebSocket hook for real-time deployment updates
 export function useDeploymentWebSocket(deploymentId: string | null) {
   const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [agentOutputs, setAgentOutputs] = useState<any>({});
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -36,8 +37,23 @@ export function useDeploymentWebSocket(deploymentId: string | null) {
 
       ws.onmessage = (event) => {
         try {
-          const data: AgentEvent = JSON.parse(event.data);
-          setEvents(prev => [...prev, data]);
+          const data: any = JSON.parse(event.data);
+          
+          // Handle agent outputs messages
+          if (data.type === 'agent_outputs') {
+            const stage = data.stage;
+            const outputs = data.outputs;
+            if (stage && outputs) {
+              setAgentOutputs((prev: any) => ({
+                ...prev,
+                [stage]: outputs
+              }));
+              console.log(`Received agent outputs for ${stage}:`, outputs);
+            }
+          } else {
+            // Handle regular status events
+            setEvents(prev => [...prev, data as AgentEvent]);
+          }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
         }
@@ -75,6 +91,7 @@ export function useDeploymentWebSocket(deploymentId: string | null) {
 
   const clearEvents = () => {
     setEvents([]);
+    setAgentOutputs({});
   };
 
   // Auto-connect when deploymentId changes
@@ -92,6 +109,7 @@ export function useDeploymentWebSocket(deploymentId: string | null) {
 
   return {
     events,
+    agentOutputs,
     connectionStatus,
     connect,
     disconnect,

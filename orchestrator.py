@@ -18,6 +18,48 @@ def _safe_broadcast(broadcast, deployment_id, stage, message, extra=None):
         pass
 
 
+def _extract_agent_outputs(stage_name, context):
+    """Extract relevant outputs for a specific agent stage from the context"""
+    outputs = {}
+    
+    if stage_name == "architect" or stage_name == "architectagent":
+        outputs = {
+            "infrastructure_files": context.get("infrastructure_files"),
+            "dockerfile": context.get("dockerfile"),
+            "ci_cd_config": context.get("ci_cd_config"),
+            "docker_compose": context.get("docker_compose"),
+            "stack": context.get("stack"),
+            "infrastructure_generated": context.get("infrastructure_generated")
+        }
+    elif stage_name == "deps" or stage_name == "dependencyanalyzer":
+        outputs = {
+            "dependency_notes": context.get("dependency_notes"),
+            "dependencies": context.get("dependencies"),
+            "risks": context.get("risks")
+        }
+    elif stage_name == "tests" or stage_name == "testsuiteagent":
+        outputs = {
+            "test_output": context.get("test_output"),
+            "test_passed": context.get("test_passed"),
+            "ai_tests": context.get("ai_tests")
+        }
+    elif stage_name == "deployment" or stage_name == "deploymentagent":
+        outputs = {
+            "deployment_url": context.get("deployment_url"),
+            "deployment_status": context.get("deployment_status")
+        }
+    elif stage_name == "incident_monitor" or stage_name == "incidentmonitoragent":
+        outputs = {
+            "healthy": context.get("healthy"),
+            "monitoring_report": context.get("monitoring_report"),
+            "github_issue_created": context.get("github_issue_created"),
+            "alert_sent": context.get("alert_sent")
+        }
+    
+    # Filter out None/empty values
+    return {k: v for k, v in outputs.items() if v is not None and v != ""}
+
+
 def _load_gitpython():
     try:
         git_module = importlib.import_module("git")
@@ -60,6 +102,16 @@ def run_pipeline(repo_url, commit_sha, deployment_id, broadcast=None, agents=Non
                 _safe_broadcast(broadcast, deployment_id, stage_name, "Failed", {"error": str(context.get("error"))})
                 _safe_broadcast(broadcast, deployment_id, "final", "Pipeline failed", {"status": "failed"})
                 return context
+            
+            # Extract and broadcast agent outputs immediately after agent completes
+            agent_outputs = _extract_agent_outputs(stage_name, context)
+            if agent_outputs:
+                _safe_broadcast(broadcast, deployment_id, stage_name, "Agent outputs available", {
+                    "type": "agent_outputs",
+                    "stage": stage_name,
+                    "outputs": agent_outputs
+                })
+            
             _safe_broadcast(broadcast, deployment_id, stage_name, "Completed")
 
         # Finalization heuristic
