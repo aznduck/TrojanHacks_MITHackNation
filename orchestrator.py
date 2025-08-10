@@ -87,17 +87,35 @@ def run_pipeline(repo_url, commit_sha, deployment_id, broadcast=None, agents=Non
     }
 
     try:
+        print(f"🚀 Starting pipeline for {deployment_id}")
         _safe_broadcast(broadcast, deployment_id, "clone", f"Cloning {repo_url}")
+        
+        print(f"📁 Attempting to clone {repo_url}")
         workdir = _clone_repo_to_temp(repo_url, commit_sha)
         context["workdir"] = workdir
+        print(f"✅ Clone successful, workdir: {workdir}")
         _safe_broadcast(broadcast, deployment_id, "clone", "Clone complete", {"workdir": workdir})
 
         agent_list = list(agents or [])
-        for agent in agent_list:
+        print(f"🤖 Running {len(agent_list)} agents")
+        for i, agent in enumerate(agent_list):
             stage_name = getattr(agent, "name", agent.__class__.__name__.lower())
+            print(f"🔄 Running agent {i+1}/{len(agent_list)}: {stage_name}")
             _safe_broadcast(broadcast, deployment_id, stage_name, "Starting")
-            context = agent.run(context)
+            
+            try:
+                context = agent.run(context)
+                print(f"✅ Agent {stage_name} completed successfully")
+            except Exception as agent_error:
+                print(f"❌ Agent {stage_name} failed: {agent_error}")
+                context["error"] = str(agent_error)
+                context["status"] = "failed"
+                _safe_broadcast(broadcast, deployment_id, stage_name, "Failed", {"error": str(agent_error)})
+                _safe_broadcast(broadcast, deployment_id, "final", "Pipeline failed", {"status": "failed"})
+                return context
+            
             if "error" in context:
+                print(f"❌ Agent {stage_name} returned error: {context['error']}")
                 context["status"] = "failed"
                 _safe_broadcast(broadcast, deployment_id, stage_name, "Failed", {"error": str(context.get("error"))})
                 _safe_broadcast(broadcast, deployment_id, "final", "Pipeline failed", {"status": "failed"})
@@ -106,6 +124,7 @@ def run_pipeline(repo_url, commit_sha, deployment_id, broadcast=None, agents=Non
             # Extract and broadcast agent outputs immediately after agent completes
             agent_outputs = _extract_agent_outputs(stage_name, context)
             if agent_outputs:
+                print(f"📊 Agent {stage_name} outputs: {agent_outputs}")
                 _safe_broadcast(broadcast, deployment_id, stage_name, "Agent outputs available", {
                     "type": "agent_outputs",
                     "stage": stage_name,
@@ -122,6 +141,7 @@ def run_pipeline(repo_url, commit_sha, deployment_id, broadcast=None, agents=Non
         else:
             context["status"] = "failed"
 
+        print(f"🏁 Pipeline finished with status: {context.get('status')}")
         _safe_broadcast(
             broadcast,
             deployment_id,
@@ -131,6 +151,7 @@ def run_pipeline(repo_url, commit_sha, deployment_id, broadcast=None, agents=Non
         )
         return context
     except Exception as exc:
+        print(f"💥 Pipeline crashed with error: {exc}")
         context["status"] = "failed"
         context["error"] = str(exc)
         _safe_broadcast(broadcast, deployment_id, "final", "Pipeline crashed", {"status": "failed", "error": str(exc)})
@@ -139,7 +160,9 @@ def run_pipeline(repo_url, commit_sha, deployment_id, broadcast=None, agents=Non
         if workdir and os.path.isdir(workdir):
             try:
                 shutil.rmtree(workdir)
-            except Exception:
+                print(f"🧹 Cleaned up workdir: {workdir}")
+            except Exception as cleanup_error:
+                print(f"⚠️ Failed to cleanup workdir: {cleanup_error}")
                 pass
 
 

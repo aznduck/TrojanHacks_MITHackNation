@@ -162,13 +162,20 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 def run_pipeline_sync(repo_url: str, commit_sha: str, deployment_id: str, agents: list):
     """Run the orchestrator pipeline synchronously in a thread with real-time WebSocket broadcasting"""
     try:
+        print(f"🔧 [THREAD] Starting pipeline sync for {deployment_id}")
+        print(f"🔧 [THREAD] Repo: {repo_url}, Commit: {commit_sha}")
+        print(f"🔧 [THREAD] Agents: {[agent.name for agent in agents]}")
+        
         # Create a synchronous broadcast wrapper that uses the existing ws_broadcast
         def thread_broadcast(deployment_id: str, message: dict):
+            print(f"🔧 [THREAD] Broadcasting: {message}")
             # Use the existing synchronous broadcast function
             ws_broadcast(deployment_id, message)
         
+        print(f"🔧 [THREAD] About to call run_pipeline...")
         # Run pipeline with real-time broadcasting
         result = run_pipeline(repo_url, commit_sha, deployment_id, broadcast=thread_broadcast, agents=agents)
+        print(f"🔧 [THREAD] Pipeline completed with result: {result}")
         
         # Extract agent outputs from the context
         agent_outputs = {
