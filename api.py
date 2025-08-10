@@ -90,18 +90,61 @@ async def github_webhook(request: Request, background: BackgroundTasks):
 
     deployment_id = str(uuid.uuid4())
 
-    def _run():
-        agents = [
-            ArchitectAgent(),
-            DependencyAnalyzer(name="Deps", description="Parse manifests and flag risks"),
-            TestSuiteAgent(),
-            DeploymentAgent(),
-            IncidentMonitorAgent(),
-        ]
-        run_pipeline(repo_url, commit_sha, deployment_id, broadcast=ws_broadcast, agents=agents)
-
-    background.add_task(_run)
-    return JSONResponse({"ok": True, "deployment_id": deployment_id})
+    # Run pipeline synchronously to get results
+    agents = [
+        ArchitectAgent(),
+        DependencyAnalyzer(name="Deps", description="Parse manifests and flag risks"),
+        TestSuiteAgent(),
+        DeploymentAgent(),
+        IncidentMonitorAgent(),
+    ]
+    
+    # Execute pipeline and wait for results
+    result = run_pipeline(repo_url, commit_sha, deployment_id, broadcast=ws_broadcast, agents=agents)
+    
+    # Extract agent outputs from the context
+    agent_outputs = {
+        "architect": {
+            "infrastructure_files": result.get("infrastructure_files"),
+            "dockerfile": result.get("dockerfile"),
+            "ci_cd_config": result.get("ci_cd_config"),
+            "docker_compose": result.get("docker_compose"),
+            "stack": result.get("stack"),
+            "infrastructure_generated": result.get("infrastructure_generated")
+        },
+        "dependencies": {
+            "dependency_notes": result.get("dependency_notes"),
+            "dependencies": result.get("dependencies"),
+            "risks": result.get("risks")
+        },
+        "tests": {
+            "test_output": result.get("test_output"),
+            "test_passed": result.get("test_passed"),
+            "ai_tests": result.get("ai_tests")
+        },
+        "deployment": {
+            "deployment_url": result.get("deployment_url"),
+            "deployment_status": result.get("deployment_status")
+        },
+        "monitoring": {
+            "healthy": result.get("healthy"),
+            "monitoring_report": result.get("monitoring_report"),
+            "github_issue_created": result.get("github_issue_created"),
+            "alert_sent": result.get("alert_sent")
+        }
+    }
+    
+    # Return comprehensive response
+    return JSONResponse({
+        "ok": True,
+        "deployment_id": deployment_id,
+        "status": result.get("status", "unknown"),
+        "error": result.get("error") if "error" in result else None,
+        "workdir": result.get("workdir"),
+        "agent_outputs": agent_outputs,
+        "websocket_url": f"/ws/status?deployment_id={deployment_id}",
+        "replay_url": f"/replay/{deployment_id}"
+    })
 
 
 @app.websocket("/ws/status")
