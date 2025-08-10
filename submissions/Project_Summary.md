@@ -6,6 +6,7 @@ What we built during the hackathon
 - FastAPI backend that ingests GitHub webhooks and triggers a multi‑agent pipeline (Architect → Deps → Tests → Deploy → IncidentMonitor).
 - Universal agent logger that emits structured status + trace events (LLM/tool I/O, agent deltas) to a registered webhook for live UIs.
 - Deterministic replay: fetch full timelines and re‑broadcast with original timing; sandbox re‑run that substitutes recorded outputs.
+- Intuitive React Flow timeline where the user can see detailed event logs + agent outputs for each individual agent
 - Optional MongoDB persistence for history; optional compliance actions: auto GitHub Issues/PRs and Gmail notifications to commit authors.
 
 Who benefits
