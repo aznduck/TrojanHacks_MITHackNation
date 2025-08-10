@@ -88,7 +88,7 @@ export default function RecentDeployments({
   const getSuccessRate = () => {
     if (deployments.length === 0) return 0;
     const succeeded = deployments.filter(
-      (d) => d.status === "succeeded"
+      (deployment: DeploymentInfo) => deployment.status === "succeeded"
     ).length;
     return Math.round((succeeded / deployments.length) * 100);
   };
@@ -173,6 +173,12 @@ export default function RecentDeployments({
 
                   <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
                     <span>{formatTimeAgo(deployment.created_at)}</span>
+                    
+                    {deployment.repo_url && (
+                      <span className="text-gray-500">
+                        {deployment.repo_url.split('/').pop()?.replace('.git', '') || 'Unknown Repo'}
+                      </span>
+                    )}
 
                     {deployment.deployment_url && (
                       <a

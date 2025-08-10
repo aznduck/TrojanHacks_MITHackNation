@@ -72,19 +72,6 @@ export default function Dashboard() {
                 ></div>
                 {health.ok ? "System Healthy" : "System Issues"}
               </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mt-4">
-                {Object.entries(health.env).map(([key, value]) => (
-                  <div key={key} className="flex items-center space-x-2">
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        value ? "bg-green-500" : "bg-gray-300"
-                      }`}
-                    ></div>
-                    <span className="text-sm text-gray-800">{key}</span>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>
