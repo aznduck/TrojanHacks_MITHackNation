@@ -44,4 +44,4 @@ GitHub Push --> [ FastAPI Webhook ] --> [ Orchestrator ] --> [ Agents Pipeline ]
 ```
 
 ## Notes
-- If we had 24 more hours, we’d add a runs list API, per-step deterministic substitution (LLM/tool), and a React Flow graph UI.
+- If we had 24 more hours, we’d add a runs list API, per-step deterministic substitution (LLM/tool), and enhanced UI elements.
