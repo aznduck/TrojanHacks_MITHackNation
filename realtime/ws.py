@@ -17,6 +17,7 @@ class ConnectionManager:
     def __init__(self):
         self._rooms = {}
         self._events = {}
+        self._agent_outputs = {}  # Store agent outputs by deployment_id
 
     async def connect(self, deployment_id, websocket):
         await websocket.accept()
@@ -58,6 +59,38 @@ class ConnectionManager:
 
     def get_events(self, deployment_id):
         return list(self._events.get(deployment_id, []))
+    
+    def store_agent_outputs(self, deployment_id, agent_outputs):
+        """Store agent outputs for a deployment"""
+        self._agent_outputs[deployment_id] = agent_outputs
+        # Also persist to MongoDB if available
+        if _mongo:
+            try:
+                doc = {
+                    "deployment_id": deployment_id,
+                    "agent_outputs": agent_outputs,
+                    "stored_at": int(time.time())
+                }
+                _mongo.agent_outputs.replace_one(
+                    {"deployment_id": deployment_id}, 
+                    doc, 
+                    upsert=True
+                )
+            except Exception:
+                pass
+    
+    def get_agent_outputs(self, deployment_id):
+        """Get agent outputs for a deployment"""
+        # Try MongoDB first if available
+        if _mongo:
+            try:
+                doc = _mongo.agent_outputs.find_one({"deployment_id": deployment_id})
+                if doc:
+                    return doc.get("agent_outputs", {})
+            except Exception:
+                pass
+        # Fallback to in-memory storage
+        return self._agent_outputs.get(deployment_id, {})
 
 
 manager = ConnectionManager()

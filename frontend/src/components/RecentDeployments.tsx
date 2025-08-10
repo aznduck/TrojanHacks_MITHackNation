@@ -169,17 +169,12 @@ export default function RecentDeployments({
 
         {/* Success Rate Badge */}
         <div className="flex items-center space-x-4">
-          <div className="text-sm text-gray-600">
-            Success Rate:{" "}
-            <span className="font-semibold text-green-600">
-              {getSuccessRate()}%
-            </span>
-          </div>
           <button
             onClick={() => window.location.reload()}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium p-1 rounded hover:bg-blue-50 transition-colors"
+            title="Refresh deployments"
           >
-            Refresh
+            🔄
           </button>
         </div>
       </div>
@@ -225,7 +220,7 @@ export default function RecentDeployments({
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 hover:underline"
                       >
-                        🔗 View Live
+                        View Live
                       </a>
                     )}
                   </div>
@@ -233,19 +228,21 @@ export default function RecentDeployments({
               </div>
 
               <div className="flex items-center space-x-2">
-                <Link
-                  href={`/replay/${deployment.deployment_id}`}
-                  className="inline-flex items-center px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  🎬 Replay
-                </Link>
-
+                {(deployment.status === "succeeded" ||
+                  deployment.status === "failed") && (
+                  <Link
+                    href={`/replay/${deployment.deployment_id}`}
+                    className="inline-flex items-center px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  >
+                    Replay
+                  </Link>
+                )}
                 {deployment.status === "running" && (
                   <Link
                     href={`/monitor/${deployment.deployment_id}`}
                     className="inline-flex items-center px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
                   >
-                    👀 Monitor
+                    Monitor
                   </Link>
                 )}
               </div>

@@ -39,6 +39,15 @@ export class ApiClient {
     return response.json();
   }
 
+  // Get agent outputs for a deployment
+  async getAgentOutputs(deploymentId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/deployment/${deploymentId}/outputs`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch agent outputs: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
   // Trigger GitHub webhook (for testing purposes)
   async triggerWebhook(payload: any): Promise<WebhookResponse> {
     const response = await fetch(`${this.baseUrl}/webhook/github`, {

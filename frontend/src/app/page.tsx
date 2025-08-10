@@ -26,7 +26,6 @@ export default function Dashboard() {
         setLoading(false);
       }
     };
-
     fetchHealth();
   }, []);
 
@@ -35,9 +34,7 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            AgentOps Replay Dashboard
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900">AgentOps</h1>
         </div>
 
         {/* System Status */}
@@ -88,12 +85,6 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-
-              {health.hint && (
-                <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded mt-3">
-                  💡 {health.hint}
-                </div>
-              )}
             </div>
           )}
         </div>

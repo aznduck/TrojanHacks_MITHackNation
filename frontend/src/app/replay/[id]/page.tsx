@@ -12,6 +12,106 @@ import {
   mockFailedTimelineEvents,
 } from "@/lib/mock-timeline-data";
 
+// Component to display agent outputs in a structured way
+const AgentOutputsDisplay = ({
+  stage,
+  outputs,
+}: {
+  stage: string;
+  outputs: any;
+}) => {
+  const renderOutputValue = (key: string, value: any) => {
+    if (typeof value === "string" && value.length > 100) {
+      // Long strings - show in code block
+      return (
+        <div key={key} className="mb-3">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+          </label>
+          <pre className="text-xs bg-gray-50 p-2 rounded border overflow-auto max-h-32 text-gray-800">
+            {value}
+          </pre>
+        </div>
+      );
+    } else if (typeof value === "object" && value !== null) {
+      // Objects - show as JSON
+      return (
+        <div key={key} className="mb-3">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+          </label>
+          <pre className="text-xs bg-gray-50 p-2 rounded border overflow-auto max-h-32 text-gray-800">
+            {JSON.stringify(value, null, 2)}
+          </pre>
+        </div>
+      );
+    } else if (typeof value === "boolean") {
+      // Booleans - show as badges
+      return (
+        <div key={key} className="mb-2">
+          <label className="text-xs font-medium text-gray-600 mr-2">
+            {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}:
+          </label>
+          <span
+            className={`px-2 py-1 rounded text-xs font-medium ${
+              value ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+            }`}
+          >
+            {value ? "Yes" : "No"}
+          </span>
+        </div>
+      );
+    } else if (value && typeof value === "string" && value.startsWith("http")) {
+      // URLs - show as links
+      return (
+        <div key={key} className="mb-2">
+          <label className="text-xs font-medium text-gray-600 mr-2">
+            {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}:
+          </label>
+          <a
+            href={value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 text-sm underline"
+          >
+            {value}
+          </a>
+        </div>
+      );
+    } else {
+      // Simple values
+      return (
+        <div key={key} className="mb-2">
+          <label className="text-xs font-medium text-gray-600 mr-2">
+            {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}:
+          </label>
+          <span className="text-sm text-gray-900">{String(value)}</span>
+        </div>
+      );
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {Object.entries(outputs)
+        .filter(
+          ([_, value]) => value !== null && value !== undefined && value !== ""
+        )
+        .map(([key, value]) => renderOutputValue(key, value))}
+      {Object.keys(outputs).filter(
+        (key) =>
+          outputs[key] !== null &&
+          outputs[key] !== undefined &&
+          outputs[key] !== ""
+      ).length === 0 && (
+        <p className="text-sm text-gray-500 italic">
+          No outputs available for this agent.
+        </p>
+      )}
+    </div>
+  );
+};
+
 export default function ReplayViewer() {
   const params = useParams();
   const deploymentId = params.id as string;
@@ -22,6 +122,7 @@ export default function ReplayViewer() {
   const [selectedEvent, setSelectedEvent] = useState<AgentEvent | null>(null);
   const [currentEventIndex, setCurrentEventIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [agentOutputs, setAgentOutputs] = useState<any>(null);
 
   useEffect(() => {
     const fetchDeployment = async () => {
@@ -42,6 +143,13 @@ export default function ReplayViewer() {
           // Try to fetch real data, fallback to mock on error
           try {
             events = await apiClient.getReplayEvents(deploymentId);
+            // Also fetch agent outputs for real deployments
+            try {
+              const outputs = await apiClient.getAgentOutputs(deploymentId);
+              setAgentOutputs(outputs);
+            } catch (outputError) {
+              console.log("No agent outputs available for this deployment");
+            }
           } catch {
             events = mockTimelineEvents; // Fallback to mock data
           }
@@ -83,7 +191,11 @@ export default function ReplayViewer() {
 
   // Sync selected event with current replay index
   useEffect(() => {
-    if (deployment?.events && currentEventIndex >= 0 && currentEventIndex < deployment.events.length) {
+    if (
+      deployment?.events &&
+      currentEventIndex >= 0 &&
+      currentEventIndex < deployment.events.length
+    ) {
       setSelectedEvent(deployment.events[currentEventIndex]);
     }
   }, [currentEventIndex, deployment?.events]);
@@ -316,8 +428,20 @@ export default function ReplayViewer() {
                     )}
                   </div>
                 )}
+                {/* Agent Outputs Section */}
+                {agentOutputs && agentOutputs[selectedEvent.stage] && (
+                  <div className="border-t pt-4">
+                    <label className="block text-sm font-medium text-gray-900 mb-3">
+                      Agent Outputs ({selectedEvent.stage})
+                    </label>
+                    <AgentOutputsDisplay
+                      stage={selectedEvent.stage}
+                      outputs={agentOutputs[selectedEvent.stage]}
+                    />
+                  </div>
+                )}
 
-                <div>
+                <div className="border-t pt-4">
                   <label className="block text-sm font-medium text-gray-900 mb-1">
                     Raw Event Data
                   </label>

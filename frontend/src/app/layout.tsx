@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgentOps Replay Dashboard",
+  title: "AgentOps",
   description: "Monitor and replay AI agent deployment workflows",
 };
 
