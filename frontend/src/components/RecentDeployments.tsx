@@ -4,45 +4,6 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { DeploymentInfo } from "@/lib/types";
 
-// Mock data for recent deployments
-const mockRecentDeployments: DeploymentInfo[] = [
-  {
-    deployment_id: "mock-success",
-    status: "succeeded",
-    created_at: Date.now() - 1000 * 60 * 30, // 30 minutes ago
-    deployment_url: "https://app-deploy-001.vercel.app",
-    events: [],
-  },
-  {
-    deployment_id: "deploy-2024-002",
-    status: "failed",
-    created_at: Date.now() - 1000 * 60 * 60 * 2, // 2 hours ago
-    deployment_url: undefined,
-    events: [],
-  },
-  {
-    deployment_id: "deploy-2024-003",
-    status: "succeeded",
-    created_at: Date.now() - 1000 * 60 * 60 * 4, // 4 hours ago
-    deployment_url: "https://app-deploy-003.vercel.app",
-    events: [],
-  },
-  {
-    deployment_id: "deploy-2024-004",
-    status: "running",
-    created_at: Date.now() - 1000 * 60 * 60 * 6, // 6 hours ago
-    deployment_url: undefined,
-    events: [],
-  },
-  {
-    deployment_id: "deploy-2024-005",
-    status: "succeeded",
-    created_at: Date.now() - 1000 * 60 * 60 * 24, // 1 day ago
-    deployment_url: "https://app-deploy-005.vercel.app",
-    events: [],
-  },
-];
-
 interface RecentDeploymentsProps {
   className?: string;
 }
@@ -59,13 +20,8 @@ export default function RecentDeployments({
       try {
         setLoading(true);
 
-        // TODO: Replace with actual API call
-        // const response = await apiClient.getRecentDeployments();
-        // setDeployments(response);
-
-        // For now, use mock data
-        await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate API delay
-        setDeployments(mockRecentDeployments);
+        // No deployments to show - empty state
+        setDeployments([]);
       } catch (err) {
         setError(
           err instanceof Error
