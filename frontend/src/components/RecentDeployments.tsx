@@ -19,9 +19,14 @@ export default function RecentDeployments({
     const fetchRecentDeployments = async () => {
       try {
         setLoading(true);
-
-        // No deployments to show - empty state
-        setDeployments([]);
+        
+        const response = await fetch('/api/deployments/recent');
+        if (response.ok) {
+          const data = await response.json();
+          setDeployments(data);
+        } else {
+          throw new Error('Failed to fetch deployments');
+        }
       } catch (err) {
         setError(
           err instanceof Error

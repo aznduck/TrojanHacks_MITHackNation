@@ -118,6 +118,27 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         IncidentMonitorAgent(),
     ]
     
+    # Broadcast deployment start event
+    ws_broadcast(deployment_id, {
+        "type": "deployment_start",
+        "deployment_id": deployment_id,
+        "status": "started",
+        "repo_url": repo_url,
+        "commit_sha": commit_sha,
+        "ts": int(time.time())
+    })
+    
+    # Also store directly in manager for immediate access
+    from realtime.ws import manager
+    manager._events.setdefault(deployment_id, []).append({
+        "type": "deployment_start",
+        "deployment_id": deployment_id,
+        "status": "started",
+        "repo_url": repo_url,
+        "commit_sha": commit_sha,
+        "ts": int(time.time())
+    })
+    
     # Start pipeline in a separate thread for real-time broadcasting
     import threading
     thread = threading.Thread(
@@ -193,6 +214,15 @@ def run_pipeline_sync(repo_url: str, commit_sha: str, deployment_id: str, agents
             "timestamp": int(time.time())
         })
         
+        # Send deployment completion event for tracking
+        ws_broadcast(deployment_id, {
+            "type": "deployment_complete",
+            "deployment_id": deployment_id,
+            "status": "succeeded" if result.get("status") == "success" else "failed",
+            "deployment_url": result.get("deployment_url"),
+            "ts": int(time.time())
+        })
+        
     except Exception as e:
         # Send error event
         ws_broadcast(deployment_id, {
@@ -202,6 +232,16 @@ def run_pipeline_sync(repo_url: str, commit_sha: str, deployment_id: str, agents
             "status": "error",
             "timestamp": int(time.time())
         })
+        
+        # Send deployment failure event for tracking
+        ws_broadcast(deployment_id, {
+            "type": "deployment_complete",
+            "deployment_id": deployment_id,
+            "status": "failed",
+            "deployment_url": None,
+            "ts": int(time.time())
+        })
+        
         print(f"Pipeline error for {deployment_id}: {e}")
 
 
@@ -228,6 +268,82 @@ async def get_replay(deployment_id: str):
         pass
     return JSONResponse(manager.get_events(deployment_id))
 
+
+@app.get("/deployments/recent")
+async def get_recent_deployments():
+    """Get recent deployments"""
+    try:
+        # Try MongoDB first if available
+        if _mongo is not None:
+            # Get all deployment start events
+            start_docs = list(_mongo.events.find({"type": "deployment_start"}).sort("ts", -1).limit(20))
+            
+            deployments = []
+            for start_doc in start_docs:
+                deployment_id = start_doc.get("deployment_id")
+                
+                # Look for completion event to get final status
+                completion_doc = _mongo.events.find_one({
+                    "type": "deployment_complete",
+                    "deployment_id": deployment_id
+                })
+                
+                # Determine final status
+                if completion_doc:
+                    status = completion_doc.get("status", "unknown")
+                    deployment_url = completion_doc.get("deployment_url")
+                else:
+                    status = "running"
+                    deployment_url = None
+                
+                start_doc.pop("_id", None)
+                deployments.append({
+                    "deployment_id": deployment_id,
+                    "status": status,
+                    "created_at": start_doc.get("ts", int(time.time())),
+                    "repo_url": start_doc.get("repo_url", ""),
+                    "commit_sha": start_doc.get("commit_sha", ""),
+                    "deployment_url": deployment_url
+                })
+            
+            return JSONResponse(deployments)
+        else:
+            # Fallback to in-memory storage from the manager
+            from realtime.ws import manager
+            # Get all events from all deployments
+            all_events = []
+            for deployment_id, events in manager._events.items():
+                all_events.extend(events)
+            
+            deployment_starts = [e for e in all_events if e.get("type") == "deployment_start"]
+            
+            deployments = []
+            for event in deployment_starts[-20:]:  # Last 20
+                deployment_id = event.get("deployment_id")
+                
+                # Look for completion event
+                completion_events = [e for e in all_events if e.get("type") == "deployment_complete" and e.get("deployment_id") == deployment_id]
+                completion_event = completion_events[-1] if completion_events else None
+                
+                if completion_event:
+                    status = completion_event.get("status", "unknown")
+                    deployment_url = completion_event.get("deployment_url")
+                else:
+                    status = "running"
+                    deployment_url = None
+                
+                deployments.append({
+                    "deployment_id": deployment_id,
+                    "status": status,
+                    "created_at": event.get("ts", int(time.time())),
+                    "repo_url": event.get("repo_url", ""),
+                    "commit_sha": event.get("commit_sha", ""),
+                    "deployment_url": deployment_url
+                })
+            
+            return JSONResponse(deployments)
+    except Exception as e:
+        return JSONResponse([])
 
 @app.get("/deployment/{deployment_id}/outputs")
 async def get_agent_outputs(deployment_id: str):
