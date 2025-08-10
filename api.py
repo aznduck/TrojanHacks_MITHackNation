@@ -25,6 +25,9 @@ from agents.incident_monitor import IncidentMonitorAgent
 from realtime.ws import manager, broadcast as ws_broadcast
 from realtime.ws import _mongo  # optional persistence
 
+# Email notification imports
+from email_integration_example import DeploymentNotifier
+
 
 REQUIRED_ENVS = ["GITHUB_WEBHOOK_SECRET"]
 OPTIONAL_ENVS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "VERCEL_TOKEN", "GITHUB_TOKEN"]
@@ -41,6 +44,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Initialize email notification service
+deployment_notifier = DeploymentNotifier()
 
 # CORS for frontend convenience (set CORS_ORIGINS env as comma-separated list; default *)
 cors_origins = os.getenv("CORS_ORIGINS", "*")
@@ -91,6 +97,17 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="missing repo or commit")
 
     deployment_id = str(uuid.uuid4())
+
+    # Send deployment start notification
+    email_recipients = os.getenv("EMAIL_RECIPIENTS", "").split(",") if os.getenv("EMAIL_RECIPIENTS") else []
+    if email_recipients:
+        background.add_task(
+            deployment_notifier.send_deployment_start_notification,
+            deployment_id=deployment_id,
+            repo_url=repo_url,
+            commit_sha=commit_sha,
+            recipients=email_recipients
+        )
 
     # Run pipeline synchronously to get results
     agents = [
@@ -230,6 +247,38 @@ async def health():
         "env": present,
         "hint": "Set GITHUB_WEBHOOK_SECRET and one of OPENAI_API_KEY/ANTHROPIC_API_KEY; VERCEL_TOKEN for deploy, GITHUB_TOKEN for issues/PRs.",
     })
+
+
+@app.post("/test/email")
+async def test_email(request: Request):
+    """Test endpoint for email functionality"""
+    try:
+        data = await request.json()
+        to_email = data.get("to_email")
+        subject = data.get("subject", "Test Email")
+        body = data.get("body", "This is a test email from the deployment system.")
+        
+        if not to_email:
+            raise HTTPException(status_code=400, detail="to_email is required")
+        
+        # Send test email
+        result = deployment_notifier.gmail_service.send_email(
+            to_email=to_email,
+            subject=subject,
+            body=body
+        )
+        
+        if result:
+            return JSONResponse({
+                "ok": True,
+                "message": "Test email sent successfully",
+                "message_id": result.get("id")
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send email")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email test failed: {str(e)}")
 
 
 @app.post("/replay/{deployment_id}/broadcast")
