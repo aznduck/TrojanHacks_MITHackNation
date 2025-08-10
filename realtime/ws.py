@@ -20,7 +20,11 @@ class ConnectionManager:
         self._events = {}
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         self._agent_outputs = {}  # Store agent outputs by deployment_id
+=======
+        self._callbacks = {}
+>>>>>>> Stashed changes
 =======
         self._callbacks = {}
 >>>>>>> Stashed changes
@@ -91,6 +95,25 @@ class ConnectionManager:
                 pass
         # Fallback to in-memory storage
         return self._agent_outputs.get(deployment_id, {})
+
+
+async def _post_json(url: str, payload: dict):
+    await asyncio.to_thread(_post_json_sync, url, payload)
+
+
+def _post_json_sync(url: str, payload: dict):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url=url,
+        method="POST",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as _:
+            pass
+    except Exception:
+        pass
 
 
 async def _post_json(url: str, payload: dict):
