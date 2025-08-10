@@ -5,7 +5,7 @@ from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_anthropic import ChatAnthropic
-from realtime.ws import broadcast as ws_broadcast, manager as ws_manager
+from realtime.ws import broadcast as ws_broadcast, manager as ws_manager, _mongo
 
 
 class BaseAgent(ABC):
@@ -243,6 +243,19 @@ class _WSCallbackHandler(BaseCallbackHandler):
 
 def _get_recorded_agent_delta(*, source_deployment_id: str, agent_stage: str):
     try:
+        # Prefer Mongo if available
+        if _mongo:
+            doc = _mongo.events.find_one(
+                {
+                    "deployment_id": source_deployment_id,
+                    "type": "trace",
+                    "stage": agent_stage,
+                    "subtype": "agent_delta",
+                },
+                sort=[("ts", -1)],
+            )
+            if doc and isinstance(doc.get("delta"), dict):
+                return doc.get("delta")
         events = ws_manager.get_events(source_deployment_id)
         # Search from end for the last delta of this agent stage
         for evt in reversed(events):

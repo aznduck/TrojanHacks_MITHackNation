@@ -1,4 +1,16 @@
 import asyncio
+import os
+import time
+
+_mongo = None
+try:
+    from pymongo import MongoClient  # type: ignore
+
+    uri = os.getenv("MONGODB_URI")
+    if uri:
+        _mongo = MongoClient(uri)[os.getenv("MONGODB_DB", "agentops")]
+except Exception:
+    _mongo = None
 
 
 class ConnectionManager:
@@ -23,6 +35,15 @@ class ConnectionManager:
         buf.append(message)
         if len(buf) > 500:
             self._events[deployment_id] = buf[-500:]
+        # persist to Mongo if available
+        if _mongo:
+            try:
+                doc = dict(message)
+                doc.setdefault("deployment_id", deployment_id)
+                doc.setdefault("ts", int(time.time()))
+                _mongo.events.insert_one(doc)
+            except Exception:
+                pass
         room = self._rooms.get(deployment_id, set())
         dead = []
         for ws in list(room):

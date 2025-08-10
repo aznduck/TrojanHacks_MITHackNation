@@ -22,6 +22,7 @@ from agents.tests import TestSuiteAgent
 from agents.deployment import DeploymentAgent
 from agents.incident_monitor import IncidentMonitorAgent
 from realtime.ws import manager, broadcast as ws_broadcast
+from realtime.ws import _mongo  # optional persistence
 
 
 REQUIRED_ENVS = ["GITHUB_WEBHOOK_SECRET"]
@@ -170,6 +171,14 @@ async def ws_status(websocket: WebSocket):
 
 @app.get("/replay/{deployment_id}")
 async def get_replay(deployment_id: str):
+    try:
+        if _mongo:
+            events = list(_mongo.events.find({"deployment_id": deployment_id}).sort("ts", 1))
+            for e in events:
+                e.pop("_id", None)
+            return JSONResponse(events)
+    except Exception:
+        pass
     return JSONResponse(manager.get_events(deployment_id))
 
 
@@ -193,7 +202,17 @@ async def replay_broadcast(deployment_id: str, request: Request, background: Bac
     except Exception:
         speed = 1.0
 
-    events = manager.get_events(deployment_id)
+    try:
+        events = None
+        if _mongo:
+            docs = list(_mongo.events.find({"deployment_id": deployment_id}).sort("ts", 1))
+            for d in docs:
+                d.pop("_id", None)
+            events = docs
+        else:
+            events = manager.get_events(deployment_id)
+    except Exception:
+        events = manager.get_events(deployment_id)
     if not events:
         raise HTTPException(status_code=404, detail="no events for deployment_id")
 
