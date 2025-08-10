@@ -30,7 +30,7 @@ from email_integration_example import DeploymentNotifier
 
 
 REQUIRED_ENVS = ["GITHUB_WEBHOOK_SECRET"]
-OPTIONAL_ENVS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "VERCEL_TOKEN", "GITHUB_TOKEN"]
+OPTIONAL_ENVS = ["OPENAI_API_KEY", "AGENTIC_API_KEY", "VERCEL_TOKEN", "GITHUB_TOKEN"]
 
 
 @asynccontextmanager
@@ -38,8 +38,8 @@ async def lifespan(app: FastAPI):
     missing = [k for k in REQUIRED_ENVS if not os.getenv(k)]
     if missing:
         logging.warning("Missing required envs: %s", ", ".join(missing))
-    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
-        logging.warning("No LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY)")
+    if not os.getenv("OPENAI_API_KEY") and not os.getenv("AGENTIC_API_KEY"):
+        logging.warning("No LLM API key set (OPENAI_API_KEY or AGENTIC_API_KEY)")
     yield
 
 
@@ -245,7 +245,7 @@ async def health():
     return JSONResponse({
         "ok": ok,
         "env": present,
-        "hint": "Set GITHUB_WEBHOOK_SECRET and one of OPENAI_API_KEY/ANTHROPIC_API_KEY; VERCEL_TOKEN for deploy, GITHUB_TOKEN for issues/PRs.",
+        "hint": "Set GITHUB_WEBHOOK_SECRET and one of OPENAI_API_KEY/AGENTIC_API_KEY; VERCEL_TOKEN for deploy, GITHUB_TOKEN for issues/PRs.",
     })
 
 

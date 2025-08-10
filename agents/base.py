@@ -161,7 +161,7 @@ def _redact(value: str) -> str:
         return value
     to_mask = [
         "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
+        "AGENTIC_API_KEY",
         "VERCEL_TOKEN",
         "GITHUB_TOKEN",
     ]
