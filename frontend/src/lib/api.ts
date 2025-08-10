@@ -48,6 +48,32 @@ export class ApiClient {
     return response.json();
   }
 
+  async registerCallback(deploymentId: string, callbackUrl: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/callbacks/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        deployment_id: deploymentId,
+        callback_url: callbackUrl
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to register callback: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async getEventsFromCallback(deploymentId: string): Promise<any> {
+    const response = await fetch(`/api/agent-events?deployment_id=${deploymentId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get events from callback: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
   // Trigger GitHub webhook (for testing purposes)
   async triggerWebhook(payload: any): Promise<WebhookResponse> {
     const response = await fetch(`${this.baseUrl}/webhook/github`, {

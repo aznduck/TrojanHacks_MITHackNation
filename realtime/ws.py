@@ -19,10 +19,42 @@ class ConnectionManager:
     def __init__(self):
         self._events = {}
         self._callbacks = {}
+        self._agent_outputs = {}
 
     def register_callback(self, deployment_id: str, callback_url: str):
         urls = self._callbacks.setdefault(deployment_id, set())
         urls.add(callback_url)
+    
+    def store_agent_outputs(self, deployment_id: str, agent_outputs: dict):
+        """Store agent outputs for a deployment"""
+        self._agent_outputs[deployment_id] = agent_outputs
+        
+        # Also persist to MongoDB if available
+        try:
+            _mongo.agent_outputs.replace_one(
+                {"deployment_id": deployment_id},
+                {
+                    "deployment_id": deployment_id,
+                    "agent_outputs": agent_outputs,
+                    "timestamp": int(time.time())
+                },
+                upsert=True
+            )
+        except Exception:
+            pass  # MongoDB not available, use in-memory only
+    
+    def get_agent_outputs(self, deployment_id: str) -> dict:
+        """Get agent outputs for a deployment"""
+        # Try MongoDB first
+        try:
+            doc = _mongo.agent_outputs.find_one({"deployment_id": deployment_id})
+            if doc:
+                return doc.get("agent_outputs", {})
+        except Exception:
+            pass
+        
+        # Fall back to in-memory
+        return self._agent_outputs.get(deployment_id, {})
 
     async def broadcast(self, deployment_id, message):
         buf = self._events.setdefault(deployment_id, [])
@@ -41,11 +73,19 @@ class ConnectionManager:
         # post to registered webhook callbacks
         for url in list(self._callbacks.get(deployment_id, set())):
             try:
-                asyncio.get_running_loop().create_task(_post_json(url, message))
+                # Ensure message has deployment_id for frontend
+                callback_message = dict(message)
+                callback_message.setdefault("deployment_id", deployment_id)
+                callback_message.setdefault("ts", int(time.time()))
+                
+                asyncio.get_running_loop().create_task(_post_json(url, callback_message))
             except RuntimeError:
                 # no loop; send synchronously
                 try:
-                    _post_json_sync(url, message)
+                    callback_message = dict(message)
+                    callback_message.setdefault("deployment_id", deployment_id)
+                    callback_message.setdefault("ts", int(time.time()))
+                    _post_json_sync(url, callback_message)
                 except Exception:
                     pass
 

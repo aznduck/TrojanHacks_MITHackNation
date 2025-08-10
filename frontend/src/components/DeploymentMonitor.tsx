@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useDeploymentWebSocket } from "../lib/websocket";
+import { useDeploymentEvents } from "@/lib/useDeploymentEvents";
 
-// Agent outputs display component (copied from replay viewer)
+// Agent outputs display component
 const AgentOutputsDisplay = ({
   stage,
   outputs,
@@ -13,7 +13,6 @@ const AgentOutputsDisplay = ({
 }) => {
   const renderOutputValue = (key: string, value: any) => {
     if (typeof value === "string" && value.length > 100) {
-      // Long strings - show in code block
       return (
         <div key={key} className="mb-3">
           <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -25,7 +24,6 @@ const AgentOutputsDisplay = ({
         </div>
       );
     } else if (typeof value === "object" && value !== null) {
-      // Objects - show as JSON
       return (
         <div key={key} className="mb-3">
           <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -36,41 +34,7 @@ const AgentOutputsDisplay = ({
           </pre>
         </div>
       );
-    } else if (typeof value === "boolean") {
-      // Booleans - show as badges
-      return (
-        <div key={key} className="mb-2">
-          <label className="text-xs font-medium text-gray-600 mr-2">
-            {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}:
-          </label>
-          <span
-            className={`px-2 py-1 rounded text-xs font-medium ${
-              value ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-            }`}
-          >
-            {value ? "Yes" : "No"}
-          </span>
-        </div>
-      );
-    } else if (value && typeof value === "string" && value.startsWith("http")) {
-      // URLs - show as links
-      return (
-        <div key={key} className="mb-2">
-          <label className="text-xs font-medium text-gray-600 mr-2">
-            {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}:
-          </label>
-          <a
-            href={value}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 text-sm underline"
-          >
-            {value}
-          </a>
-        </div>
-      );
     } else {
-      // Simple values
       return (
         <div key={key} className="mb-2">
           <label className="text-xs font-medium text-gray-600 mr-2">
@@ -110,246 +74,198 @@ interface DeploymentMonitorProps {
   className?: string;
 }
 
-export default function DeploymentMonitor({
+export default function DeploymentMonitorHTTP({
   initialDeploymentId = "",
   autoStart = false,
   showHeader = true,
-  className = ""
+  className = "",
 }: DeploymentMonitorProps) {
-  const [deploymentId, setDeploymentId] = useState(initialDeploymentId || '');
-  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [deploymentId, setDeploymentId] = useState(initialDeploymentId || "");
+  const [isMonitoring, setIsMonitoring] = useState(autoStart);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
 
-  // Use the WebSocket hook for real-time updates
-  const {
-    events,
-    agentOutputs,
-    connectionStatus,
-    connect,
-    disconnect,
-    clearEvents,
-    isConnected,
-  } = useDeploymentWebSocket(isMonitoring ? deploymentId : null);
+  // Use HTTP events hook for real-time events
+  const { events, agentOutputs, isConnected, error } = useDeploymentEvents(
+    isMonitoring ? deploymentId : null
+  );
+
+  // Debug logging for agent outputs
+  useEffect(() => {
+    console.log('🔍 DeploymentMonitor - Agent Outputs Updated:', {
+      deploymentId,
+      agentOutputs,
+      agentOutputsKeys: Object.keys(agentOutputs || {}),
+      eventsCount: events.length
+    });
+  }, [agentOutputs, deploymentId, events.length]);
 
   // Auto-start monitoring if requested
   useEffect(() => {
-    if (autoStart && initialDeploymentId && !isMonitoring) {
-      setDeploymentId(initialDeploymentId);
+    if (autoStart && initialDeploymentId) {
       setIsMonitoring(true);
-      clearEvents();
     }
-  }, [autoStart, initialDeploymentId, isMonitoring, clearEvents]);
+  }, [autoStart, initialDeploymentId]);
 
   const handleEventClick = (event: any) => {
     setSelectedEvent(event);
   };
 
   const startMonitoring = () => {
-    if (!deploymentId.trim()) return;
-    setIsMonitoring(true);
-    clearEvents();
+    if (deploymentId.trim()) {
+      setIsMonitoring(true);
+      setSelectedEvent(null);
+    }
   };
 
   const stopMonitoring = () => {
     setIsMonitoring(false);
-    disconnect();
   };
 
   const getStatusColor = () => {
-    switch (connectionStatus) {
-      case "connected":
-        return "bg-green-500";
-      case "connecting":
-        return "bg-yellow-500";
-      case "error":
-        return "bg-red-500";
-      default:
-        return "bg-gray-500";
-    }
+    if (error) return "text-red-600";
+    if (isConnected) return "text-green-600";
+    return "text-yellow-600";
   };
 
   const formatTimestamp = (ts: number) => {
-    return new Date(ts).toLocaleTimeString();
+    return new Date(ts * 1000).toLocaleTimeString();
   };
 
   const getEventIcon = (event: any) => {
-    if (event.type === "status") {
-      switch (event.stage) {
-        case "clone":
-          return "📥";
-        case "architect":
-          return "🏗️";
-        case "deps":
-          return "📦";
-        case "tests":
-          return "🧪";
-        case "deployment":
-          return "🚀";
-        case "incident_monitor":
-          return "👀";
-        case "final":
-          return event.status === "succeeded" ? "✅" : "❌";
-        default:
-          return "⚙️";
-      }
+    switch (event.type) {
+      case "status":
+        return "📊";
+      case "trace":
+        return "🔍";
+      case "error":
+        return "❌";
+      default:
+        return "📝";
     }
-    return "📡";
   };
 
   return (
-    <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
+    <div className={`space-y-6 ${className}`}>
       {showHeader && (
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">
-          🔴 Live Deployment Monitor
-        </h2>
-      )}
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            🔴 Live Deployment Monitor (HTTP)
+          </h2>
 
-      {/* Connection Controls */}
-      <div className="bg-gray-50 rounded-lg p-4 mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Monitor Deployment
-        </h3>
+          <div className="flex gap-4 items-end mb-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Deployment ID
+              </label>
+              <input
+                type="text"
+                value={deploymentId}
+                onChange={(e) => setDeploymentId(e.target.value)}
+                placeholder="Enter deployment ID to monitor..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isMonitoring}
+              />
+            </div>
+            <div>
+              {!isMonitoring ? (
+                <button
+                  onClick={startMonitoring}
+                  disabled={!deploymentId.trim()}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Start Monitoring
+                </button>
+              ) : (
+                <button
+                  onClick={stopMonitoring}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                >
+                  Stop Monitoring
+                </button>
+              )}
+            </div>
+          </div>
 
-        <div className="flex text-gray-900 items-center gap-4 mb-4">
-          <input
-            type="text"
-            value={deploymentId}
-            onChange={(e) => setDeploymentId(e.target.value)}
-            placeholder="Enter deployment ID (e.g., abc123-def456)"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isMonitoring}
-          />
-
-          {!isMonitoring ? (
-            <button
-              onClick={startMonitoring}
-              disabled={!deploymentId.trim()}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-            >
-              Start Monitoring
-            </button>
-          ) : (
-            <button
-              onClick={stopMonitoring}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-            >
-              Stop Monitoring
-            </button>
-          )}
-        </div>
-
-        {/* Connection Status */}
-        {isMonitoring && (
-          <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${getStatusColor()}`}></div>
-            <span className="text-sm font-medium text-gray-900 capitalize">
-              {connectionStatus}
-            </span>
-            <span className="text-sm text-gray-700">
-              Monitoring: {deploymentId}
-            </span>
-            {connectionStatus === "error" && (
-              <span className="text-sm text-red-600 ml-2">
-                ⚠️ Check if backend is running on localhost:8000
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  isConnected ? "bg-green-500" : "bg-red-500"
+                }`}
+              ></div>
+              <span className={getStatusColor()}>
+                {error
+                  ? `Error: ${error}`
+                  : isConnected
+                  ? "Connected (HTTP Polling)"
+                  : "Disconnected"}
               </span>
+            </div>
+            {isMonitoring && (
+              <div className="text-gray-600">
+                Monitoring:{" "}
+                <span className="font-mono text-sm">{deploymentId}</span>
+              </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Real-time Events */}
+      {/* Events List */}
       {isMonitoring && (
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex justify-between items-center mb-4">
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">
               Live Events ({events.length})
             </h3>
-            <button
-              onClick={clearEvents}
-              className="px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-            >
-              Clear
-            </button>
+            <div className="text-sm text-gray-500">
+              Updates every 2 seconds via HTTP polling
+            </div>
           </div>
 
-          <div className="max-h-96 overflow-y-auto space-y-2">
+          <div className="space-y-2 max-h-96 overflow-y-auto">
             {events.length === 0 ? (
-              <div className="text-center py-8 text-gray-600">
-                <div className="text-2xl mb-2">⏳</div>
-                <p className="text-gray-800">Waiting for events...</p>
-                <p className="text-sm mt-1 text-gray-600">
-                  {isConnected ? "Connected and listening" : "Connecting..."}
+              <div className="text-center py-8 text-gray-500">
+                <p>
+                  No events yet. Events will appear here as the deployment
+                  progresses...
                 </p>
               </div>
             ) : (
               events.map((event, index) => (
                 <div
                   key={index}
-                  className={`bg-white border rounded p-3 text-sm shadow-sm cursor-pointer transition-colors hover:bg-gray-50 ${
-                    selectedEvent === event ? "ring-2 ring-blue-500 bg-blue-50" : ""
-                  }`}
                   onClick={() => handleEventClick(event)}
+                  className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                    selectedEvent === event
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  }`}
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
                       <span className="text-lg">{getEventIcon(event)}</span>
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          event.type === "status"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-purple-100 text-purple-800"
-                        }`}
-                      >
-                        {event.type} - {event.stage}
-                      </span>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-gray-900">
+                            {event.stage}
+                          </span>
+                          <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
+                            {event.type}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600">{event.message}</p>
+                      </div>
                     </div>
-                    <span className="text-gray-600 text-xs">
+                    <div className="text-xs text-gray-500">
                       {formatTimestamp(event.ts)}
-                    </span>
+                    </div>
                   </div>
 
-                  <p className="text-gray-800 mb-1">
-                    {event.type === "status"
-                      ? event.message
-                      : event.type === "trace"
-                      ? `${event.subtype} - ${
-                          event.tool || event.model || "agent"
-                        }`
-                      : "Unknown event"}
-                  </p>
-
-                  {event.type === "status" && (event as any).status && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          (event as any).status === "succeeded"
-                            ? "bg-green-100 text-green-800"
-                            : (event as any).status === "failed"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                        }`}
-                      >
-                        {(event as any).status}
-                      </span>
-
-                      {(event as any).deployment_url && (
-                        <a
-                          href={(event as any).deployment_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-700 hover:underline text-xs font-medium"
-                        >
-                          🔗 View Deployment
-                        </a>
-                      )}
-                    </div>
-                  )}
-
-                  {(event as any).error && (
-                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
-                      <p className="text-red-800 text-xs">
-                        <strong>Error:</strong> {(event as any).error}
-                      </p>
+                  {/* Show agent outputs indicator if available */}
+                  {agentOutputs && agentOutputs[event.stage] && (
+                    <div className="mt-2 text-xs text-green-600">
+                      🔴 Agent outputs available
                     </div>
                   )}
                 </div>
@@ -361,7 +277,7 @@ export default function DeploymentMonitor({
 
       {/* Event Details Section */}
       {selectedEvent && (
-        <div className="bg-gray-50 rounded-lg p-4 mt-6">
+        <div className="bg-gray-50 rounded-lg p-4">
           <div className="bg-white rounded-lg p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               Event Details
@@ -372,9 +288,7 @@ export default function DeploymentMonitor({
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stage
                   </label>
-                  <p className="text-sm text-gray-900">
-                    {selectedEvent.stage}
-                  </p>
+                  <p className="text-sm text-gray-900">{selectedEvent.stage}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -382,9 +296,6 @@ export default function DeploymentMonitor({
                   </label>
                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     {selectedEvent.type}
-                    {selectedEvent.type === "trace" &&
-                      selectedEvent.subtype &&
-                      ` - ${selectedEvent.subtype}`}
                   </span>
                 </div>
               </div>
@@ -393,15 +304,7 @@ export default function DeploymentMonitor({
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Message
                 </label>
-                <p className="text-sm text-gray-900">
-                  {selectedEvent.type === "status"
-                    ? selectedEvent.message
-                    : selectedEvent.type === "trace"
-                    ? `${selectedEvent.subtype} - ${
-                        selectedEvent.tool || selectedEvent.model || "agent"
-                      }`
-                    : "Unknown event"}
-                </p>
+                <p className="text-sm text-gray-900">{selectedEvent.message}</p>
               </div>
 
               <div>
@@ -414,18 +317,47 @@ export default function DeploymentMonitor({
               </div>
 
               {/* Agent Outputs Section */}
-              {agentOutputs && agentOutputs[selectedEvent.stage] && (
-                <div className="border-t pt-4">
-                  <label className="block text-sm font-medium text-gray-900 mb-3">
-                    Agent Outputs ({selectedEvent.stage})
-                    <span className="ml-2 text-xs text-green-600">🔴 Live</span>
-                  </label>
-                  <AgentOutputsDisplay
-                    stage={selectedEvent.stage}
-                    outputs={agentOutputs[selectedEvent.stage]}
-                  />
-                </div>
-              )}
+              {(() => {
+                const stageOutputs = agentOutputs?.[selectedEvent.stage];
+                console.log('🎯 Event Details - Agent Outputs Check:', {
+                  selectedStage: selectedEvent.stage,
+                  hasAgentOutputs: !!agentOutputs,
+                  availableStages: Object.keys(agentOutputs || {}),
+                  stageOutputs,
+                  hasStageOutputs: !!stageOutputs
+                });
+                
+                if (stageOutputs) {
+                  return (
+                    <div className="border-t pt-4">
+                      <label className="block text-sm font-medium text-gray-900 mb-3">
+                        Agent Outputs ({selectedEvent.stage})
+                        <span className="ml-2 text-xs text-green-600">🔴 Live</span>
+                      </label>
+                      <AgentOutputsDisplay
+                        stage={selectedEvent.stage}
+                        outputs={stageOutputs}
+                      />
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="border-t pt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Agent Outputs ({selectedEvent.stage})
+                      </label>
+                      <p className="text-sm text-gray-500 italic">
+                        No agent outputs available for this stage yet.
+                        {agentOutputs && Object.keys(agentOutputs).length > 0 && (
+                          <span className="block mt-1">
+                            Available stages: {Object.keys(agentOutputs).join(', ')}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  );
+                }
+              })()}
 
               <div className="border-t pt-4">
                 <label className="block text-sm font-medium text-gray-900 mb-1">
@@ -442,7 +374,7 @@ export default function DeploymentMonitor({
 
       {/* Show message when no event is selected */}
       {!selectedEvent && isMonitoring && events.length > 0 && (
-        <div className="bg-gray-50 rounded-lg p-4 mt-6">
+        <div className="bg-gray-50 rounded-lg p-4">
           <div className="bg-white rounded-lg p-6">
             <div className="text-center py-8 text-gray-500">
               <p>Click on an event above to view details and agent outputs.</p>

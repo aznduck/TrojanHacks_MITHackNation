@@ -64,6 +64,25 @@ def test_realtime_agent_outputs():
             
             print(f"✅ Deployment started: {deployment_id}")
             print(f"🌐 Frontend URL: http://localhost:3000/monitor/{deployment_id}")
+            
+            # Register callback URL for HTTP POST events
+            callback_url = "http://localhost:3000/api/agent-events"
+            try:
+                callback_response = requests.post(
+                    f"{api_url}/callbacks/register",
+                    json={
+                        "deployment_id": deployment_id,
+                        "callback_url": callback_url
+                    },
+                    timeout=5
+                )
+                if callback_response.status_code == 200:
+                    print(f"✅ Callback registered: {callback_url}")
+                else:
+                    print(f"⚠️ Failed to register callback: {callback_response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Failed to register callback: {e}")
+            
             print()
             print("🎯 OPEN THE URL NOW to watch live events streaming!")
             print("- Events will start appearing as the pipeline runs")
