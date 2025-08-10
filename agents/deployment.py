@@ -27,8 +27,19 @@ class DeploymentAgent(BaseAgent):
     def _find_url(self, text: str) -> str | None:
         if not text:
             return None
-        m = re.search(r"https?://[\w\.-/]+", text)
-        return m.group(0) if m else None
+        # First try to find a full URL
+        m = re.search(r"https?://[\w\.-]+\.vercel\.app", text)
+        if m:
+            return m.group(0)
+        # If not found, look for partial URL and append .vercel.app
+        m = re.search(r"https?://([\w\-]+)(?:\.vercel\.app)?", text)
+        if m:
+            domain = m.group(1)
+            # If it doesn't already have .vercel.app, add it
+            if not m.group(0).endswith('.vercel.app'):
+                return f"https://{domain}.vercel.app"
+            return m.group(0)
+        return None
 
     def _run_vercel(self, workdir: str, token: str) -> Tuple[bool, str, str | None]:
         cmd = f"vercel --token {shlex.quote(token)} --yes --confirm"
