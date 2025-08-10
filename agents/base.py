@@ -1,5 +1,6 @@
 import json
 import time
+import os
 from abc import ABC, abstractmethod
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
@@ -14,7 +15,17 @@ class BaseAgent(ABC):
     def __init__(self, name, description, llm=None, max_iterations=10, temperature=0.0):
         self.name = name
         self.description = description
-        self.llm = llm or ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=temperature)
+        
+        # Get API key from environment
+        api_key = os.getenv("AGENTIC_API_KEY")
+        if not api_key:
+            raise ValueError("AGENTIC_API_KEY environment variable is required")
+        
+        self.llm = llm or ChatAnthropic(
+            model="claude-3-5-sonnet-20241022", 
+            temperature=temperature,
+            anthropic_api_key=api_key
+        )
         self.max_iterations = max_iterations
         self.tools = self.setup_tools()
 
