@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -188,25 +188,15 @@ def run_pipeline_sync(repo_url: str, commit_sha: str, deployment_id: str, agents
         print(f"Pipeline error for {deployment_id}: {e}")
 
 
-@app.websocket("/ws/status")
-async def ws_status(websocket: WebSocket):
-    deployment_id = websocket.query_params.get("deployment_id")
-    if not deployment_id:
-        await websocket.close(code=1008)
-        return
-    await manager.connect(deployment_id, websocket)
-    # send backlog
-    for evt in manager.get_events(deployment_id):
-        try:
-            await websocket.send_json(evt)
-        except Exception:
-            break
-    try:
-        while True:
-            # keep alive; we don't expect client messages
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(deployment_id, websocket)
+@app.post("/callbacks/register")
+async def register_callback(request: Request):
+    data = await request.json()
+    deployment_id = data.get("deployment_id")
+    callback_url = data.get("callback_url")
+    if not deployment_id or not callback_url:
+        raise HTTPException(status_code=400, detail="deployment_id and callback_url required")
+    manager.register_callback(deployment_id, callback_url)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/replay/{deployment_id}")

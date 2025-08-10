@@ -1,6 +1,8 @@
 import asyncio
 import os
 import time
+import json
+import urllib.request
 
 _mongo = None
 try:
@@ -15,21 +17,24 @@ except Exception:
 
 class ConnectionManager:
     def __init__(self):
-        self._rooms = {}
         self._events = {}
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
         self._agent_outputs = {}  # Store agent outputs by deployment_id
+=======
+        self._callbacks = {}
+>>>>>>> Stashed changes
+=======
+        self._callbacks = {}
+>>>>>>> Stashed changes
+=======
+        self._callbacks = {}
+>>>>>>> Stashed changes
 
-    async def connect(self, deployment_id, websocket):
-        await websocket.accept()
-        self._rooms.setdefault(deployment_id, set()).add(websocket)
-
-    def disconnect(self, deployment_id, websocket):
-        room = self._rooms.get(deployment_id)
-        if not room:
-            return
-        room.discard(websocket)
-        if not room:
-            self._rooms.pop(deployment_id, None)
+    def register_callback(self, deployment_id: str, callback_url: str):
+        urls = self._callbacks.setdefault(deployment_id, set())
+        urls.add(callback_url)
 
     async def broadcast(self, deployment_id, message):
         buf = self._events.setdefault(deployment_id, [])
@@ -45,17 +50,16 @@ class ConnectionManager:
                 _mongo.events.insert_one(doc)
             except Exception:
                 pass
-        room = self._rooms.get(deployment_id, set())
-        dead = []
-        for ws in list(room):
+        # post to registered webhook callbacks
+        for url in list(self._callbacks.get(deployment_id, set())):
             try:
-                await ws.send_json(message)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            room.discard(ws)
-        if not room and deployment_id in self._rooms:
-            self._rooms.pop(deployment_id, None)
+                asyncio.get_running_loop().create_task(_post_json(url, message))
+            except RuntimeError:
+                # no loop; send synchronously
+                try:
+                    _post_json_sync(url, message)
+                except Exception:
+                    pass
 
     def get_events(self, deployment_id):
         return list(self._events.get(deployment_id, []))
@@ -93,6 +97,63 @@ class ConnectionManager:
         return self._agent_outputs.get(deployment_id, {})
 
 
+async def _post_json(url: str, payload: dict):
+    await asyncio.to_thread(_post_json_sync, url, payload)
+
+
+def _post_json_sync(url: str, payload: dict):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url=url,
+        method="POST",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as _:
+            pass
+    except Exception:
+        pass
+
+
+async def _post_json(url: str, payload: dict):
+    await asyncio.to_thread(_post_json_sync, url, payload)
+
+
+def _post_json_sync(url: str, payload: dict):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url=url,
+        method="POST",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as _:
+            pass
+    except Exception:
+        pass
+
+
+async def _post_json(url: str, payload: dict):
+    await asyncio.to_thread(_post_json_sync, url, payload)
+
+
+def _post_json_sync(url: str, payload: dict):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url=url,
+        method="POST",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as _:
+            pass
+    except Exception:
+        pass
+
+
 manager = ConnectionManager()
 
 
@@ -106,5 +167,4 @@ def broadcast(deployment_id, message):
             loop.run_until_complete(manager.broadcast(deployment_id, message))
         finally:
             loop.close()
-
 
