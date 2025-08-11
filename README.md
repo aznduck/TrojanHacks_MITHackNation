@@ -1,4 +1,4 @@
-#Fleet Commander
+# Fleet Commander
 
 Quickstart
 - Set env vars: `GITHUB_WEBHOOK_SECRET` and one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Optional: `VERCEL_TOKEN`, `GITHUB_TOKEN`.
