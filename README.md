@@ -1,4 +1,4 @@
-<img width="5088" height="3696" alt="image" src="https://github.com/user-attachments/assets/c4868dd9-411f-4afb-8ddb-2af859632c04" /># TrojanHacks_MITHackNation
+Fleet Commander
 
 Quickstart
 - Set env vars: `GITHUB_WEBHOOK_SECRET` and one of `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Optional: `VERCEL_TOKEN`, `GITHUB_TOKEN`.
